@@ -1065,8 +1065,40 @@ function bauSummaryCards(summen, hatDaten) {
     </div>`;
 }
 
+function bauNaehrstoffDetail(zutat) {
+  return NUTRIENT_FIELDS.map(f => {
+    const val = Number(zutat[f.key]) || 0;
+    const isSub = f.group === 'fett' || f.group === 'kh';
+    return `
+      <div class="detail-row${isSub ? ' detail-row--sub' : ''}">
+        <span class="detail-label">${f.label}</span>
+        <span class="detail-value">${f.key === 'kalorien' ? Math.round(val) : runden(val)} ${f.unit}</span>
+      </div>`;
+  }).join('');
+}
+
 function bauEintragCard(eintrag) {
   const summen = summiereNaehrstoffe(eintrag.zutaten);
+  const detailId = `detail-${eintrag.id}`;
+
+  const detailZutaten = eintrag.zutaten.map(z => `
+    <div class="detail-zutat">
+      <div class="detail-zutat-name">
+        ${escHtml(z.name)} <span class="detail-zutat-menge">${z.menge}g</span>
+      </div>
+      <div class="detail-nutrient-list">
+        ${bauNaehrstoffDetail(z)}
+      </div>
+    </div>`).join('');
+
+  const detailGesamt = eintrag.zutaten.length > 1 ? `
+    <div class="detail-zutat detail-zutat--gesamt">
+      <div class="detail-zutat-name">Gesamt</div>
+      <div class="detail-nutrient-list">
+        ${bauNaehrstoffDetail(summen)}
+      </div>
+    </div>` : '';
+
   return `
     <div class="entry-card">
       <div class="entry-header">
@@ -1100,6 +1132,11 @@ function bauEintragCard(eintrag) {
           { key: 'ballaststoffe', label: 'BS',   cls: 'fiber'   },
           { key: 'salz',          label: 'Salz', cls: 'salt'    },
         ].map(p => `<span class="nutrient-pill nutrient-pill--${p.cls}">${p.label}: ${runden(summen[p.key] || 0)}g</span>`).join('')}
+      </div>
+      <button class="btn-details-toggle" data-target="${detailId}">Details anzeigen ▾</button>
+      <div class="entry-details hidden" id="${detailId}">
+        ${detailZutaten}
+        ${detailGesamt}
       </div>
     </div>`;
 }
@@ -1860,6 +1897,15 @@ function bindeViewEvents() {
   // Mahlzeit hinzufügen
   c.querySelector('#add-meal-btn')?.addEventListener('click', e => {
     oeffneModal('mahlzeit', e.currentTarget.dataset.date);
+  });
+
+  // Detail-Toggle
+  c.querySelectorAll('.btn-details-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      const hidden = target.classList.toggle('hidden');
+      btn.textContent = hidden ? 'Details anzeigen ▾' : 'Details ausblenden ▴';
+    });
   });
 
   // Als Vorlage speichern
