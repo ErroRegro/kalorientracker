@@ -1481,6 +1481,18 @@ function bindeModalMahlzeitEvents() {
   document.getElementById('copy-prompt-modal')?.addEventListener('click', () => {
     navigator.clipboard.writeText(AI_PROMPT_MAHLZEIT).then(() => zeigeToast('Prompt kopiert', 'success'));
   });
+
+  // Automatisch aus Zwischenablage einfügen wenn JSON vorhanden
+  const textarea = document.getElementById('json-input');
+  if (textarea && navigator.clipboard?.readText) {
+    navigator.clipboard.readText().then(text => {
+      const trimmed = text.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        textarea.value = trimmed;
+        analysiereJSON();
+      }
+    }).catch(() => {}); // Berechtigung verweigert – still ignorieren
+  }
 }
 
 function bindeModalVorlagenEvents() {
