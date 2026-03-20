@@ -1324,3 +1324,107 @@ a { color: inherit; text-decoration: none; }
   #bottom-nav .nav-btn span { font-size: 9px; }
   .bilanz-level-left { flex-direction: column; align-items: flex-start; gap: 4px; }
 }
+
+/* ===== VORLAGEN ===== */
+
+.icon-btn--bookmark {
+  color: var(--primary);
+  opacity: 0.7;
+}
+.icon-btn--bookmark:hover {
+  opacity: 1;
+  background: rgba(99,102,241,0.15);
+}
+
+/* Vorlagen-Liste im Modal */
+.vorlagen-leer {
+  text-align: center;
+  padding: 24px 0 8px;
+  color: var(--text-muted);
+}
+.vorlagen-leer-hint {
+  font-size: 13px;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+.vorlagen-leer-hint svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.vorlagen-liste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vorlage-item {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.vorlage-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 6px;
+}
+
+.vorlage-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.vorlage-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: block;
+  margin-top: 2px;
+}
+
+.vorlage-zutaten-preview {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Edit-View */
+.vorlagen-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.vorlage-zutat-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.vorlage-zutat-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.vorlage-zutat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* Vorlage speichern Tab */
+.vorlage-zutaten-preview {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}

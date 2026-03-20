@@ -43,6 +43,7 @@ const ICONS = {
   download:  `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`,
   upload:    `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>`,
   copy:      `<svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>`,
+  bookmark:  `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>`,
   chevronR:  `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></svg>`,
   chevronL:  `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>`,
   lightning: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`,
@@ -115,17 +116,20 @@ const state = {
   parsedWeights: null,
   activeCharts: {},
   showGewichtForm: false,
+  vorlagenEdit: null,    // null = liste, Array = deep-copy zutaten in Bearbeitung
+  vorlagePending: null,  // zutaten die als neue Vorlage gespeichert werden sollen
 };
 
 // ===== DATENBANK =====
 
 let db = {
-  version: 2,
+  version: 3,
   profil: null,
   gewicht_eintraege: [],
   aktivitaet_eintraege: [],
   tages_aktivitaetslevel: {},
   eintraege: [],
+  mahlzeit_vorlagen: [],
 };
 
 function ladeDaten() {
@@ -140,7 +144,8 @@ function ladeDaten() {
         if (!db.gewicht_eintraege) db.gewicht_eintraege = [];
         if (!db.aktivitaet_eintraege) db.aktivitaet_eintraege = [];
         if (!db.tages_aktivitaetslevel) db.tages_aktivitaetslevel = {};
-        db.version = 2;
+        if (!db.mahlzeit_vorlagen) db.mahlzeit_vorlagen = [];
+        db.version = 3;
       }
     }
   } catch (e) {
@@ -195,6 +200,18 @@ function eintragHinzufuegen(eintrag) {
 
 function eintragLoeschen(id) {
   db.eintraege = db.eintraege.filter(e => e.id !== id);
+  speichereDaten();
+}
+
+// ===== VORLAGEN =====
+
+function vorlageHinzufuegen(vorlage) {
+  db.mahlzeit_vorlagen.push(vorlage);
+  speichereDaten();
+}
+
+function vorlageLoeschen(id) {
+  db.mahlzeit_vorlagen = db.mahlzeit_vorlagen.filter(v => v.id !== id);
   speichereDaten();
 }
 
@@ -1058,6 +1075,9 @@ function bauEintragCard(eintrag) {
         </div>
         <div class="entry-actions">
           <span class="entry-kcal">${Math.round(summen.kalorien)} kcal</span>
+          <button class="icon-btn icon-btn--bookmark save-vorlage-btn" data-id="${eintrag.id}" title="Als Vorlage speichern">
+            ${ICONS.bookmark}
+          </button>
           <button class="icon-btn icon-btn--danger delete-btn" data-id="${eintrag.id}" title="Löschen">
             ${ICONS.trash}
           </button>
@@ -1102,18 +1122,21 @@ function oeffneModal(tipo, datum) {
   state.parsedIngredients = null;
   state.parsedActivities = null;
   state.parsedWeights = null;
+  state.vorlagenEdit = null;
   state.modalTipo = tipo;
   state.modalDate = datum || heuteStr();
 
   const titles = {
-    mahlzeit:       'Mahlzeit hinzufügen',
-    aktivitaet:     'Aktivität hinzufügen',
-    'gewicht-json': 'Gewicht importieren (JSON)',
+    mahlzeit:            'Mahlzeit hinzufügen',
+    aktivitaet:          'Aktivität hinzufügen',
+    'gewicht-json':      'Gewicht importieren (JSON)',
+    'vorlage-speichern': 'Als Vorlage speichern',
   };
   document.getElementById('modal-title').textContent = titles[tipo] || 'Hinzufügen';
 
   // Standard-Tab je nach Typ
   if (tipo === 'aktivitaet') state.modalTab = 'manuell';
+  else if (tipo === 'vorlage-speichern') state.modalTab = 'speichern';
   else state.modalTab = 'json';
 
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -1127,19 +1150,25 @@ function schliesseModal() {
   state.parsedIngredients = null;
   state.parsedActivities = null;
   state.parsedWeights = null;
+  state.vorlagenEdit = null;
+  state.vorlagePending = null;
 }
 
 function renderModalBody() {
   // Tabs rendern
+  const vorlagenAnzahl = db.mahlzeit_vorlagen.length;
   const tabsKonfig = {
-    mahlzeit:       [{ key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
-    aktivitaet:     [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
-    'gewicht-json': [{ key: 'json', label: 'JSON einfügen' }],
+    mahlzeit:            [{ key: 'json', label: 'JSON einfügen' }, { key: 'vorlagen', label: `Vorlagen${vorlagenAnzahl > 0 ? ` (${vorlagenAnzahl})` : ''}` }, { key: 'prompt', label: 'KI-Prompt' }],
+    aktivitaet:          [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
+    'gewicht-json':      [{ key: 'json', label: 'JSON einfügen' }],
+    'vorlage-speichern': [],
   };
-  const tabs = tabsKonfig[state.modalTipo] || tabsKonfig.mahlzeit;
-  document.getElementById('modal-tabs').innerHTML = tabs.map(t =>
+  const tabs = tabsKonfig[state.modalTipo] ?? tabsKonfig.mahlzeit;
+  const tabsEl = document.getElementById('modal-tabs');
+  tabsEl.innerHTML = tabs.map(t =>
     `<button class="tab-btn ${t.key === state.modalTab ? 'active' : ''}" data-tab="${t.key}">${t.label}</button>`
   ).join('');
+  tabsEl.style.display = tabs.length === 0 ? 'none' : '';
 
   // Tabs neu binden
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -1149,8 +1178,19 @@ function renderModalBody() {
   // Body rendern
   const body = document.getElementById('modal-body');
   if (state.modalTipo === 'mahlzeit') {
-    body.innerHTML = state.modalTab === 'json' ? bauMahlzeitJsonTab() : bauMahlzeitPromptTab();
-    bindeModalMahlzeitEvents();
+    if (state.modalTab === 'json') {
+      body.innerHTML = bauMahlzeitJsonTab();
+      bindeModalMahlzeitEvents();
+    } else if (state.modalTab === 'vorlagen') {
+      body.innerHTML = bauMahlzeitVorlagenTab();
+      bindeModalVorlagenEvents();
+    } else {
+      body.innerHTML = bauMahlzeitPromptTab();
+      bindeModalMahlzeitEvents();
+    }
+  } else if (state.modalTipo === 'vorlage-speichern') {
+    body.innerHTML = bauVorlageSpeichernTab();
+    bindeModalVorlageSpeichernEvents();
   } else if (state.modalTipo === 'aktivitaet') {
     if (state.modalTab === 'manuell') body.innerHTML = bauAktivitaetManuellTab();
     else if (state.modalTab === 'json') body.innerHTML = bauAktivitaetJsonTab();
@@ -1204,6 +1244,118 @@ function bauMahlzeitPromptTab() {
       <div class="prompt-box">
         <button class="btn btn-ghost btn-copy" id="copy-prompt-modal">${ICONS.copy} Kopieren</button>
         <pre class="prompt-text">${escHtml(AI_PROMPT_MAHLZEIT)}</pre>
+      </div>
+    </div>`;
+}
+
+function bauMahlzeitVorlagenTab() {
+  if (state.vorlagenEdit) return bauVorlagenEditView();
+
+  const vorlagen = db.mahlzeit_vorlagen;
+  if (vorlagen.length === 0) {
+    return `
+      <div class="vorlagen-leer">
+        <p>Noch keine Vorlagen gespeichert.</p>
+        <p class="vorlagen-leer-hint">Klicke auf das ${ICONS.bookmark}-Symbol bei einer gespeicherten Mahlzeit, um sie als Vorlage zu speichern.</p>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="vorlagen-liste">
+      ${vorlagen.map(v => {
+        const summen = summiereNaehrstoffe(v.zutaten);
+        return `
+          <div class="vorlage-item">
+            <div class="vorlage-item-header">
+              <div>
+                <span class="vorlage-name">${escHtml(v.name)}</span>
+                <span class="vorlage-meta">${v.zutaten.length} Zutat${v.zutaten.length !== 1 ? 'en' : ''} · ${Math.round(summen.kalorien)} kcal</span>
+              </div>
+              <button class="icon-btn icon-btn--danger delete-vorlage-btn" data-id="${v.id}" title="Vorlage löschen">
+                ${ICONS.trash}
+              </button>
+            </div>
+            <div class="vorlage-zutaten-preview">${v.zutaten.map(z => escHtml(z.name)).join(', ')}</div>
+            <button class="btn btn-primary btn-full verwenden-btn" data-id="${v.id}">Verwenden →</button>
+          </div>`;
+      }).join('')}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+      </div>
+    </div>`;
+}
+
+function bauVorlagenEditView() {
+  const zutaten = state.vorlagenEdit;
+  const jetzt = new Date();
+  const zeitStr = jetzt.toTimeString().slice(0, 5);
+  return `
+    <div class="vorlagen-edit">
+      <div class="form-group">
+        <label class="form-label">Datum & Uhrzeit</label>
+        <div class="datetime-row">
+          <input type="date" id="vl-datum" class="form-input" value="${state.modalDate}" max="${heuteStr()}">
+          <input type="time" id="vl-zeit" class="form-input" value="${zeitStr}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notiz (optional)</label>
+        <input type="text" id="vl-notiz" class="form-input" placeholder="z.B. Frühstück …">
+      </div>
+      <p class="form-label" style="margin: 12px 0 8px">Zutaten anpassen:</p>
+      ${zutaten.map((z, i) => `
+        <div class="vorlage-zutat-card">
+          <div class="vorlage-zutat-name">${escHtml(z.name)}</div>
+          <div class="vorlage-zutat-grid">
+            <div class="form-group">
+              <label class="form-label">Menge (g)</label>
+              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="menge" value="${z.menge}" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Kalorien (kcal)</label>
+              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="kalorien" value="${Math.round(z.kalorien)}" min="0">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Protein (g)</label>
+              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="protein" value="${runden(z.protein)}" min="0" step="0.1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Fett (g)</label>
+              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="fett" value="${runden(z.fett)}" min="0" step="0.1">
+            </div>
+            <div class="form-group">
+              <label class="form-label">KH (g)</label>
+              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="kohlenhydrate" value="${runden(z.kohlenhydrate)}" min="0" step="0.1">
+            </div>
+          </div>
+        </div>`).join('')}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="vl-back-btn">← Zurück</button>
+        <button class="btn btn-primary" id="vl-confirm-btn">Hinzufügen</button>
+      </div>
+    </div>`;
+}
+
+function bauVorlageSpeichernTab() {
+  const zutaten = state.vorlagePending;
+  if (!zutaten) return '<p>Fehler: Keine Zutaten.</p>';
+  const summen = summiereNaehrstoffe(zutaten);
+  return `
+    <div class="modal-json-tab">
+      <div class="form-group">
+        <label class="form-label">Name der Vorlage</label>
+        <input type="text" id="vorlage-name-input" class="form-input" placeholder="z.B. Frühstück, Haferbrei Standard …" autofocus>
+      </div>
+      <div class="preview-section" style="margin-top:12px">
+        <p class="preview-title">${zutaten.length} Zutat${zutaten.length !== 1 ? 'en' : ''} · ${Math.round(summen.kalorien)} kcal</p>
+        <div class="vorlage-zutaten-preview">${zutaten.map(z => escHtml(z.name)).join(', ')}</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+        <button class="btn btn-primary" id="vorlage-speichern-btn">Speichern</button>
       </div>
     </div>`;
 }
@@ -1298,6 +1450,73 @@ function bindeModalMahlzeitEvents() {
   document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
   document.getElementById('copy-prompt-modal')?.addEventListener('click', () => {
     navigator.clipboard.writeText(AI_PROMPT_MAHLZEIT).then(() => zeigeToast('Prompt kopiert', 'success'));
+  });
+}
+
+function bindeModalVorlagenEvents() {
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+
+  document.querySelectorAll('.delete-vorlage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      zeigeBestaetigung('Vorlage löschen?', () => {
+        vorlageLoeschen(btn.dataset.id);
+        renderModalBody();
+      });
+    });
+  });
+
+  document.querySelectorAll('.verwenden-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const vorlage = db.mahlzeit_vorlagen.find(v => v.id === btn.dataset.id);
+      if (!vorlage) return;
+      state.vorlagenEdit = JSON.parse(JSON.stringify(vorlage.zutaten));
+      renderModalBody();
+    });
+  });
+
+  // Zurück-Button im Edit-View
+  document.getElementById('vl-back-btn')?.addEventListener('click', () => {
+    state.vorlagenEdit = null;
+    renderModalBody();
+  });
+
+  // Bestätigen im Edit-View
+  document.getElementById('vl-confirm-btn')?.addEventListener('click', () => {
+    if (!state.vorlagenEdit?.length) return;
+    // Aktuelle Feldwerte einlesen
+    document.querySelectorAll('.vl-zutat-field').forEach(input => {
+      const idx = parseInt(input.dataset.idx);
+      const field = input.dataset.field;
+      state.vorlagenEdit[idx][field] = parseFloat(input.value) || 0;
+    });
+    const datum = document.getElementById('vl-datum')?.value || heuteStr();
+    const zeit  = document.getElementById('vl-zeit')?.value || '00:00';
+    const notiz = document.getElementById('vl-notiz')?.value.trim() || '';
+    eintragHinzufuegen({
+      id: genId(), datum,
+      zeitstempel: new Date(`${datum}T${zeit}:00`).toISOString(),
+      notiz, zutaten: state.vorlagenEdit,
+    });
+    state.vorlagenEdit = null;
+    schliesseModal();
+    renderView();
+    zeigeToast('Mahlzeit hinzugefügt', 'success');
+  });
+}
+
+function bindeModalVorlageSpeichernEvents() {
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+  document.getElementById('vorlage-speichern-btn')?.addEventListener('click', () => {
+    const name = document.getElementById('vorlage-name-input')?.value.trim();
+    if (!name) { zeigeToast('Bitte einen Namen eingeben', 'error'); return; }
+    vorlageHinzufuegen({
+      id: genId(),
+      name,
+      erstellt: new Date().toISOString(),
+      zutaten: JSON.parse(JSON.stringify(state.vorlagePending)),
+    });
+    schliesseModal();
+    zeigeToast(`Vorlage „${name}" gespeichert`, 'success');
   });
 }
 
@@ -1567,12 +1786,13 @@ function importiereDatei(datei) {
         `Backup importieren? ${db.eintraege.length} bestehende Einträge werden überschrieben.`,
         () => {
           db = {
-            version: 2,
+            version: 3,
             profil: parsed.profil || null,
             gewicht_eintraege: parsed.gewicht_eintraege || [],
             aktivitaet_eintraege: parsed.aktivitaet_eintraege || [],
             tages_aktivitaetslevel: parsed.tages_aktivitaetslevel || {},
             eintraege: parsed.eintraege,
+            mahlzeit_vorlagen: parsed.mahlzeit_vorlagen || [],
           };
           speichereDaten();
           renderView();
@@ -1624,6 +1844,16 @@ function bindeViewEvents() {
   // Mahlzeit hinzufügen
   c.querySelector('#add-meal-btn')?.addEventListener('click', e => {
     oeffneModal('mahlzeit', e.currentTarget.dataset.date);
+  });
+
+  // Als Vorlage speichern
+  c.querySelectorAll('.save-vorlage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const eintrag = db.eintraege.find(e => e.id === btn.dataset.id);
+      if (!eintrag) return;
+      state.vorlagePending = JSON.parse(JSON.stringify(eintrag.zutaten));
+      oeffneModal('vorlage-speichern', null);
+    });
   });
 
   // Mahlzeit löschen
@@ -1751,7 +1981,7 @@ function bindeViewEvents() {
   // Alle Daten löschen
   c.querySelector('#clear-btn')?.addEventListener('click', () => {
     zeigeBestaetigung('Wirklich ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden.', () => {
-      db = { version: 2, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [] };
+      db = { version: 3, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [], mahlzeit_vorlagen: [] };
       speichereDaten();
       renderView();
       zeigeToast('Alle Daten gelöscht', 'success');
