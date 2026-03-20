@@ -116,8 +116,9 @@ const state = {
   parsedWeights: null,
   activeCharts: {},
   showGewichtForm: false,
-  vorlagenEdit: null,    // null = liste, Array = deep-copy zutaten in Bearbeitung
-  vorlagePending: null,  // zutaten die als neue Vorlage gespeichert werden sollen
+  vorlagenEdit: null,     // null = liste, Array = deep-copy zutaten in Bearbeitung
+  vorlagenOriginal: null, // Originalwerte der Vorlage als Referenz für Proportionalrechnung
+  vorlagePending: null,   // zutaten die als neue Vorlage gespeichert werden sollen
 };
 
 // ===== DATENBANK =====
@@ -1123,6 +1124,7 @@ function oeffneModal(tipo, datum) {
   state.parsedActivities = null;
   state.parsedWeights = null;
   state.vorlagenEdit = null;
+  state.vorlagenOriginal = null;
   state.modalTipo = tipo;
   state.modalDate = datum || heuteStr();
 
@@ -1151,6 +1153,7 @@ function schliesseModal() {
   state.parsedActivities = null;
   state.parsedWeights = null;
   state.vorlagenEdit = null;
+  state.vorlagenOriginal = null;
   state.vorlagePending = null;
 }
 
@@ -1305,31 +1308,21 @@ function bauVorlagenEditView() {
         <label class="form-label">Notiz (optional)</label>
         <input type="text" id="vl-notiz" class="form-input" placeholder="z.B. Frühstück …">
       </div>
-      <p class="form-label" style="margin: 12px 0 8px">Zutaten anpassen:</p>
+      <p class="form-label" style="margin: 12px 0 8px">Menge anpassen:</p>
       ${zutaten.map((z, i) => `
         <div class="vorlage-zutat-card">
-          <div class="vorlage-zutat-name">${escHtml(z.name)}</div>
-          <div class="vorlage-zutat-grid">
-            <div class="form-group">
-              <label class="form-label">Menge (g)</label>
-              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="menge" value="${z.menge}" min="0">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Kalorien (kcal)</label>
-              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="kalorien" value="${Math.round(z.kalorien)}" min="0">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Protein (g)</label>
-              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="protein" value="${runden(z.protein)}" min="0" step="0.1">
-            </div>
-            <div class="form-group">
-              <label class="form-label">Fett (g)</label>
-              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="fett" value="${runden(z.fett)}" min="0" step="0.1">
-            </div>
-            <div class="form-group">
-              <label class="form-label">KH (g)</label>
-              <input type="number" class="form-input vl-zutat-field" data-idx="${i}" data-field="kohlenhydrate" value="${runden(z.kohlenhydrate)}" min="0" step="0.1">
-            </div>
+          <div class="vorlage-zutat-header">
+            <span class="vorlage-zutat-name">${escHtml(z.name)}</span>
+          </div>
+          <div class="vorlage-zutat-menge-row">
+            <label class="form-label">Menge (g)</label>
+            <input type="number" class="form-input vl-menge-field" data-idx="${i}" value="${z.menge}" min="0" step="1">
+          </div>
+          <div class="vorlage-zutat-stats">
+            <span class="vl-calc" data-idx="${i}" data-field="kalorien" data-unit="kcal">${Math.round(z.kalorien)} kcal</span>
+            <span class="vl-calc" data-idx="${i}" data-field="protein" data-label="P">${runden(z.protein)}g P</span>
+            <span class="vl-calc" data-idx="${i}" data-field="fett" data-label="F">${runden(z.fett)}g F</span>
+            <span class="vl-calc" data-idx="${i}" data-field="kohlenhydrate" data-label="KH">${runden(z.kohlenhydrate)}g KH</span>
           </div>
         </div>`).join('')}
       <div class="modal-footer">
@@ -1469,6 +1462,7 @@ function bindeModalVorlagenEvents() {
     btn.addEventListener('click', () => {
       const vorlage = db.mahlzeit_vorlagen.find(v => v.id === btn.dataset.id);
       if (!vorlage) return;
+      state.vorlagenOriginal = JSON.parse(JSON.stringify(vorlage.zutaten));
       state.vorlagenEdit = JSON.parse(JSON.stringify(vorlage.zutaten));
       renderModalBody();
     });
@@ -1477,18 +1471,39 @@ function bindeModalVorlagenEvents() {
   // Zurück-Button im Edit-View
   document.getElementById('vl-back-btn')?.addEventListener('click', () => {
     state.vorlagenEdit = null;
+    state.vorlagenOriginal = null;
     renderModalBody();
+  });
+
+  // Mengen-Input: proportionale Neuberechnung aller Nährwerte
+  document.querySelectorAll('.vl-menge-field').forEach(input => {
+    input.addEventListener('input', () => {
+      const idx = parseInt(input.dataset.idx);
+      const newMenge = parseFloat(input.value) || 0;
+      const orig = state.vorlagenOriginal[idx];
+      const ratio = orig.menge > 0 ? newMenge / orig.menge : 0;
+
+      state.vorlagenEdit[idx].menge = newMenge;
+      NUTRIENT_FIELDS.forEach(f => {
+        state.vorlagenEdit[idx][f.key] = orig[f.key] * ratio;
+      });
+
+      // Angezeigte Werte aktualisieren
+      document.querySelectorAll(`.vl-calc[data-idx="${idx}"]`).forEach(span => {
+        const field = span.dataset.field;
+        const val = state.vorlagenEdit[idx][field];
+        if (span.dataset.unit === 'kcal') {
+          span.textContent = `${Math.round(val)} kcal`;
+        } else {
+          span.textContent = `${runden(val)}g ${span.dataset.label}`;
+        }
+      });
+    });
   });
 
   // Bestätigen im Edit-View
   document.getElementById('vl-confirm-btn')?.addEventListener('click', () => {
     if (!state.vorlagenEdit?.length) return;
-    // Aktuelle Feldwerte einlesen
-    document.querySelectorAll('.vl-zutat-field').forEach(input => {
-      const idx = parseInt(input.dataset.idx);
-      const field = input.dataset.field;
-      state.vorlagenEdit[idx][field] = parseFloat(input.value) || 0;
-    });
     const datum = document.getElementById('vl-datum')?.value || heuteStr();
     const zeit  = document.getElementById('vl-zeit')?.value || '00:00';
     const notiz = document.getElementById('vl-notiz')?.value.trim() || '';
@@ -1498,6 +1513,7 @@ function bindeModalVorlagenEvents() {
       notiz, zutaten: state.vorlagenEdit,
     });
     state.vorlagenEdit = null;
+    state.vorlagenOriginal = null;
     schliesseModal();
     renderView();
     zeigeToast('Mahlzeit hinzugefügt', 'success');
