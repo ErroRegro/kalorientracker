@@ -27,6 +27,7 @@ const AKTIVITAETS_LEVELS = [
 const NAV_ITEMS = [
   { view: 'heute',    label: 'Heute',    icon: 'home'      },
   { view: 'verlauf',  label: 'Verlauf',  icon: 'calendar'  },
+  { view: 'fasten',   label: 'Fasten',   icon: 'timer'     },
   { view: 'grafiken', label: 'Grafiken', icon: 'chart'     },
   { view: 'profil',   label: 'Profil',   icon: 'user'      },
   { view: 'daten',    label: 'Daten',    icon: 'database'  },
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
 
 const ICONS = {
   home:      `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`,
+  timer:     `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M12 5V3M10 3h4"/></svg>`,
   calendar:  `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
   chart:     `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>`,
   user:      `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
@@ -406,6 +408,7 @@ function renderView() {
   switch (state.currentView) {
     case 'heute':    container.innerHTML = bauHeuteView();    break;
     case 'verlauf':  container.innerHTML = bauVerlaufView();  break;
+    case 'fasten':   container.innerHTML = bauFastenView();   break;
     case 'grafiken': container.innerHTML = bauGrafikenView(); break;
     case 'profil':   container.innerHTML = bauProfilView();   break;
     case 'daten':    container.innerHTML = bauDatenView();    break;
@@ -493,6 +496,19 @@ function bindeOnboardingEvents() {
     bauNav();
     navigiere('heute');
   });
+}
+
+// ===== FASTEN VIEW =====
+
+function bauFastenView() {
+  return `
+    <div class="view-header">
+      <div>
+        <h1 class="view-title">Fasten-Timer</h1>
+        <p class="view-subtitle">${db.fasting_timer ? 'Timer läuft' : 'Kein aktiver Timer'}</p>
+      </div>
+    </div>
+    ${bauFastingTimerSection()}`;
 }
 
 // ===== FASTING TIMER =====
@@ -665,7 +681,6 @@ function bauHeuteView() {
       </button>
     </div>
     ${bauSummaryCards(summen, eintraege.length > 0)}
-    ${bauFastingTimerSection()}
     ${bauBilanzSection(heute)}
     <div class="entries-section">
       ${eintraege.length === 0
