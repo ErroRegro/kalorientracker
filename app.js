@@ -114,6 +114,7 @@ const state = {
   parsedIngredients: null,
   parsedActivities: null,
   parsedWeights: null,
+  fastingAnzeige: 'verbleibend', // 'verbleibend' | 'vergangen'
   activeCharts: {},
   showGewichtForm: false,
   vorlagenEdit: null,     // null = liste, Array = deep-copy zutaten in Bearbeitung
@@ -131,6 +132,7 @@ let db = {
   tages_aktivitaetslevel: {},
   eintraege: [],
   mahlzeit_vorlagen: [],
+  fasting_timer: null, // { ziel_stunden, start_zeit (ISO) } | null
 };
 
 function ladeDaten() {
@@ -146,6 +148,7 @@ function ladeDaten() {
         if (!db.aktivitaet_eintraege) db.aktivitaet_eintraege = [];
         if (!db.tages_aktivitaetslevel) db.tages_aktivitaetslevel = {};
         if (!db.mahlzeit_vorlagen) db.mahlzeit_vorlagen = [];
+        if (db.fasting_timer === undefined) db.fasting_timer = null;
         db.version = 3;
       }
     }
@@ -410,6 +413,7 @@ function renderView() {
 
   if (state.currentView === 'grafiken') initCharts();
   bindeViewEvents();
+  if (db.fasting_timer) starteFastingInterval();
 }
 
 // ===== ONBOARDING =====
@@ -491,6 +495,159 @@ function bindeOnboardingEvents() {
   });
 }
 
+// ===== FASTING TIMER =====
+
+let fastingInterval = null;
+
+function pad2(n) { return String(n).padStart(2, '0'); }
+
+function formatFastingTime(ms) {
+  const totalSec = Math.floor(Math.max(0, ms) / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    const rh = h % 24;
+    return `${d}T ${pad2(rh)}:${pad2(m)}:${pad2(s)}`;
+  }
+  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+}
+
+function starteFastingInterval() {
+  if (fastingInterval) return;
+  fastingInterval = setInterval(aktualisiereFastingTimer, 1000);
+}
+
+function stoppeFastingInterval() {
+  if (fastingInterval) { clearInterval(fastingInterval); fastingInterval = null; }
+}
+
+function aktualisiereFastingTimer() {
+  if (!db.fasting_timer) { stoppeFastingInterval(); return; }
+
+  const jetzt = Date.now();
+  const start = new Date(db.fasting_timer.start_zeit).getTime();
+  const zielMs = db.fasting_timer.ziel_stunden * 3600 * 1000;
+  const vergangenMs = jetzt - start;
+  const verbleibenMs = Math.max(0, zielMs - vergangenMs);
+  const progress = Math.min(1, vergangenMs / zielMs);
+
+  if (verbleibenMs <= 0) stoppeFastingInterval();
+
+  // DOM nur aktualisieren wenn Elemente sichtbar
+  const timeEl = document.getElementById('fasting-time-text');
+  if (!timeEl) return;
+
+  const anzeige = state.fastingAnzeige === 'vergangen' ? vergangenMs : verbleibenMs;
+  timeEl.textContent = formatFastingTime(anzeige);
+
+  const labelEl = document.getElementById('fasting-time-label');
+  if (labelEl) {
+    if (verbleibenMs <= 0) labelEl.textContent = 'Ziel erreicht! 🎉';
+    else if (state.fastingAnzeige === 'vergangen') labelEl.textContent = 'vergangen';
+    else labelEl.textContent = 'verbleibend';
+  }
+
+  const circleEl = document.getElementById('fasting-progress-circle');
+  if (circleEl) {
+    const circumference = 339.29;
+    circleEl.style.strokeDashoffset = circumference * (1 - progress);
+  }
+}
+
+function bauFastingTimerSection() {
+  if (!db.fasting_timer) return bauFastingSetup();
+  return bauFastingAktiv();
+}
+
+function bauFastingSetup() {
+  const jetzt = new Date();
+  const datumStr = jetzt.toLocaleDateString('sv');
+  const zeitStr = jetzt.toTimeString().slice(0, 5);
+  return `
+    <div class="fasting-card">
+      <div class="fasting-header">
+        <h2 class="fasting-title">⏱ Fasten-Timer</h2>
+      </div>
+      <div class="fasting-setup">
+        <div class="form-group">
+          <label class="form-label">Fastenziel</label>
+          <div class="fasting-presets">
+            <button class="fasting-preset-btn" data-h="16">16h</button>
+            <button class="fasting-preset-btn" data-h="24">24h</button>
+            <button class="fasting-preset-btn" data-h="36">36h</button>
+            <button class="fasting-preset-btn" data-h="48">48h</button>
+            <button class="fasting-preset-btn" data-h="72">72h</button>
+          </div>
+          <input type="number" id="fasting-ziel-input" class="form-input" min="1" max="240" placeholder="Eigene Stunden eingeben">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Startdatum</label>
+            <input type="date" id="fasting-start-datum" class="form-input" value="${datumStr}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Startuhrzeit</label>
+            <input type="time" id="fasting-start-zeit" class="form-input" value="${zeitStr}">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="fasting-start-btn">Timer starten</button>
+      </div>
+    </div>`;
+}
+
+function bauFastingAktiv() {
+  const { start_zeit, ziel_stunden } = db.fasting_timer;
+  const jetzt = Date.now();
+  const start = new Date(start_zeit).getTime();
+  const zielMs = ziel_stunden * 3600 * 1000;
+  const vergangenMs = jetzt - start;
+  const verbleibenMs = Math.max(0, zielMs - vergangenMs);
+  const progress = Math.min(1, vergangenMs / zielMs);
+  const circumference = 339.29;
+  const offset = circumference * (1 - progress);
+
+  const anzeige = state.fastingAnzeige === 'vergangen' ? vergangenMs : verbleibenMs;
+  const timeStr = formatFastingTime(anzeige);
+  const isComplete = verbleibenMs <= 0;
+  let labelStr = isComplete ? 'Ziel erreicht! 🎉' : (state.fastingAnzeige === 'vergangen' ? 'vergangen' : 'verbleibend');
+  const ringColor = isComplete ? '#22c55e' : 'var(--accent)';
+
+  const startDatum = new Date(start_zeit).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  const startZeit = new Date(start_zeit).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+  return `
+    <div class="fasting-card">
+      <div class="fasting-header">
+        <h2 class="fasting-title">⏱ Fasten-Timer</h2>
+        <button class="btn btn-ghost btn-sm" id="fasting-stop-btn">Stoppen</button>
+      </div>
+      <div class="fasting-aktiv">
+        <div class="fasting-ring-wrap">
+          <svg viewBox="0 0 120 120" width="180" height="180">
+            <circle cx="60" cy="60" r="54" fill="none" stroke="var(--surface-2, #1e2130)" stroke-width="10"/>
+            <circle id="fasting-progress-circle" cx="60" cy="60" r="54" fill="none"
+              stroke="${ringColor}" stroke-width="10" stroke-linecap="round"
+              stroke-dasharray="${circumference}"
+              style="stroke-dashoffset:${offset}; transform:rotate(-90deg); transform-origin:60px 60px;"/>
+          </svg>
+          <div class="fasting-ring-inner">
+            <span class="fasting-time" id="fasting-time-text">${timeStr}</span>
+            <span class="fasting-label" id="fasting-time-label">${labelStr}</span>
+          </div>
+        </div>
+        <div class="fasting-meta">
+          <span>Ziel: <strong>${ziel_stunden}h</strong></span>
+          <span>Start: ${startDatum}, ${startZeit} Uhr</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="fasting-toggle-btn">
+          ${state.fastingAnzeige === 'vergangen' ? '⏳ Verbleibend anzeigen' : '⏱ Vergangen anzeigen'}
+        </button>
+      </div>
+    </div>`;
+}
+
 // ===== HEUTE =====
 
 function bauHeuteView() {
@@ -508,6 +665,7 @@ function bauHeuteView() {
       </button>
     </div>
     ${bauSummaryCards(summen, eintraege.length > 0)}
+    ${bauFastingTimerSection()}
     ${bauBilanzSection(heute)}
     <div class="entries-section">
       ${eintraege.length === 0
@@ -2052,10 +2210,48 @@ function bindeViewEvents() {
     navigator.clipboard.writeText(getAktivitaetsPrompt()).then(() => zeigeToast('Prompt kopiert', 'success'));
   });
 
+  // Fasting Timer
+  c.querySelector('#fasting-start-btn')?.addEventListener('click', () => {
+    const ziel = parseFloat(document.getElementById('fasting-ziel-input')?.value);
+    const datum = document.getElementById('fasting-start-datum')?.value;
+    const zeit = document.getElementById('fasting-start-zeit')?.value;
+    if (!ziel || ziel <= 0) { zeigeToast('Bitte Fastenziel eingeben', 'error'); return; }
+    if (!datum || !zeit) { zeigeToast('Bitte Startzeit eingeben', 'error'); return; }
+    db.fasting_timer = { ziel_stunden: ziel, start_zeit: new Date(`${datum}T${zeit}:00`).toISOString() };
+    speichereDaten();
+    renderView();
+    zeigeToast('Fasten-Timer gestartet', 'success');
+  });
+
+  c.querySelectorAll('.fasting-preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('fasting-ziel-input');
+      if (input) input.value = btn.dataset.h;
+      c.querySelectorAll('.fasting-preset-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  c.querySelector('#fasting-stop-btn')?.addEventListener('click', () => {
+    zeigeBestaetigung('Fasten-Timer wirklich stoppen?', () => {
+      db.fasting_timer = null;
+      speichereDaten();
+      stoppeFastingInterval();
+      renderView();
+    });
+  });
+
+  c.querySelector('#fasting-toggle-btn')?.addEventListener('click', () => {
+    state.fastingAnzeige = state.fastingAnzeige === 'vergangen' ? 'verbleibend' : 'vergangen';
+    stoppeFastingInterval();
+    renderView();
+  });
+
   // Alle Daten löschen
   c.querySelector('#clear-btn')?.addEventListener('click', () => {
     zeigeBestaetigung('Wirklich ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden.', () => {
-      db = { version: 3, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [], mahlzeit_vorlagen: [] };
+      db = { version: 3, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [], mahlzeit_vorlagen: [], fasting_timer: null };
+      stoppeFastingInterval();
       speichereDaten();
       renderView();
       zeigeToast('Alle Daten gelöscht', 'success');
