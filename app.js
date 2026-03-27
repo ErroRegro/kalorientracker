@@ -873,7 +873,10 @@ function bauGrafikenView() {
         <div class="chart-container"><canvas id="chart-makro-verlauf"></canvas></div>
       </div>
       <div class="chart-card chart-card--full">
-        <h2 class="chart-title">Tägliche Bilanz (Defizit / Überschuss)</h2>
+        <div class="chart-card-header">
+          <h2 class="chart-title">Tägliche Bilanz (Defizit / Überschuss)</h2>
+          <div id="bilanz-gesamt-badge" class="bilanz-gesamt-badge"></div>
+        </div>
         <div class="chart-container"><canvas id="chart-bilanz"></canvas></div>
       </div>
       ${hatGewicht ? `
@@ -964,6 +967,20 @@ function initCharts() {
         scales: { x: { ...achsenDefaults.x, stacked: true }, y: { ...achsenDefaults.y, stacked: true } }
       }
     });
+  }
+
+  // Gesamt-Bilanz Badge
+  const validBilanz = bilanzDaten.filter(v => v !== null);
+  const bilanzBadge = document.getElementById('bilanz-gesamt-badge');
+  if (bilanzBadge) {
+    if (validBilanz.length === 0) {
+      bilanzBadge.textContent = '';
+    } else {
+      const summe = Math.round(validBilanz.reduce((a, b) => a + b, 0));
+      const istDefizit = summe <= 0;
+      bilanzBadge.textContent = `Gesamt: ${numFmt(Math.abs(summe))} kcal ${istDefizit ? 'Defizit' : 'Überschuss'}`;
+      bilanzBadge.className = `bilanz-gesamt-badge ${istDefizit ? 'bilanz-gesamt--defizit' : 'bilanz-gesamt--ueberschuss'}`;
+    }
   }
 
   // Bilanz-Chart
