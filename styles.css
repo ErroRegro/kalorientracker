@@ -1335,6 +1335,8 @@ a { color: inherit; text-decoration: none; }
   opacity: 1;
   background: rgba(99,102,241,0.15);
 }
+.icon-btn--edit { color: var(--text-secondary); }
+.icon-btn--edit:hover { background: rgba(99,102,241,0.12); color: var(--accent); }
 
 /* Vorlagen-Liste im Modal */
 .vorlagen-leer {

@@ -50,6 +50,7 @@ const ICONS = {
   chevronL:  `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>`,
   lightning: `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>`,
   scale:     `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M12 3v1M3 9h18M5 9l2 9h10l2-9M9 9V6a3 3 0 016 0v3"/></svg>`,
+  pencil:    `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
 };
 
 const AI_PROMPT_MAHLZEIT = `Analysiere die folgende Mahlzeit und erstelle ein JSON-Array.
@@ -119,9 +120,12 @@ const state = {
   fastingAnzeige: 'verbleibend', // 'verbleibend' | 'vergangen'
   activeCharts: {},
   showGewichtForm: false,
-  vorlagenEdit: null,     // null = liste, Array = deep-copy zutaten in Bearbeitung
-  vorlagenOriginal: null, // Originalwerte der Vorlage als Referenz für Proportionalrechnung
-  vorlagePending: null,   // zutaten die als neue Vorlage gespeichert werden sollen
+  vorlagenEdit: null,
+  vorlagenOriginal: null,
+  vorlagePending: null,
+  editEintragId: null,       // ID des Eintrags der gerade bearbeitet wird
+  editZutaten: null,         // deep-copy der Zutaten in Bearbeitung
+  editZutatenOriginal: null, // Originalwerte als Referenz für Proportionalrechnung
 };
 
 // ===== DATENBANK =====
@@ -1284,6 +1288,9 @@ function bauEintragCard(eintrag) {
           <button class="icon-btn icon-btn--bookmark save-vorlage-btn" data-id="${eintrag.id}" title="Als Vorlage speichern">
             ${ICONS.bookmark}
           </button>
+          <button class="icon-btn icon-btn--edit edit-eintrag-btn" data-id="${eintrag.id}" title="Bearbeiten">
+            ${ICONS.pencil}
+          </button>
           <button class="icon-btn icon-btn--danger delete-btn" data-id="${eintrag.id}" title="Löschen">
             ${ICONS.trash}
           </button>
@@ -1335,14 +1342,21 @@ function oeffneModal(tipo, datum) {
   state.parsedWeights = null;
   state.vorlagenEdit = null;
   state.vorlagenOriginal = null;
+  // editEintragId/editZutaten werden vom Aufrufer gesetzt, nicht hier zurückgesetzt
+  if (tipo !== 'eintrag-bearbeiten') {
+    state.editEintragId = null;
+    state.editZutaten = null;
+    state.editZutatenOriginal = null;
+  }
   state.modalTipo = tipo;
   state.modalDate = datum || heuteStr();
 
   const titles = {
-    mahlzeit:            'Mahlzeit hinzufügen',
-    aktivitaet:          'Aktivität hinzufügen',
-    'gewicht-json':      'Gewicht importieren (JSON)',
-    'vorlage-speichern': 'Als Vorlage speichern',
+    mahlzeit:              'Mahlzeit hinzufügen',
+    aktivitaet:            'Aktivität hinzufügen',
+    'gewicht-json':        'Gewicht importieren (JSON)',
+    'vorlage-speichern':   'Als Vorlage speichern',
+    'eintrag-bearbeiten':  'Eintrag bearbeiten',
   };
   document.getElementById('modal-title').textContent = titles[tipo] || 'Hinzufügen';
 
@@ -1365,16 +1379,20 @@ function schliesseModal() {
   state.vorlagenEdit = null;
   state.vorlagenOriginal = null;
   state.vorlagePending = null;
+  state.editEintragId = null;
+  state.editZutaten = null;
+  state.editZutatenOriginal = null;
 }
 
 function renderModalBody() {
   // Tabs rendern
   const vorlagenAnzahl = db.mahlzeit_vorlagen.length;
   const tabsKonfig = {
-    mahlzeit:            [{ key: 'json', label: 'JSON einfügen' }, { key: 'vorlagen', label: `Vorlagen${vorlagenAnzahl > 0 ? ` (${vorlagenAnzahl})` : ''}` }, { key: 'prompt', label: 'KI-Prompt' }],
-    aktivitaet:          [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
-    'gewicht-json':      [{ key: 'json', label: 'JSON einfügen' }],
-    'vorlage-speichern': [],
+    mahlzeit:              [{ key: 'json', label: 'JSON einfügen' }, { key: 'vorlagen', label: `Vorlagen${vorlagenAnzahl > 0 ? ` (${vorlagenAnzahl})` : ''}` }, { key: 'prompt', label: 'KI-Prompt' }],
+    aktivitaet:            [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
+    'gewicht-json':        [{ key: 'json', label: 'JSON einfügen' }],
+    'vorlage-speichern':   [],
+    'eintrag-bearbeiten':  [],
   };
   const tabs = tabsKonfig[state.modalTipo] ?? tabsKonfig.mahlzeit;
   const tabsEl = document.getElementById('modal-tabs');
@@ -1412,6 +1430,9 @@ function renderModalBody() {
   } else if (state.modalTipo === 'gewicht-json') {
     body.innerHTML = bauGewichtJsonTab();
     bindeModalGewichtEvents();
+  } else if (state.modalTipo === 'eintrag-bearbeiten') {
+    body.innerHTML = bauEintragBearbeitenModal();
+    bindeEintragBearbeitenEvents();
   }
 }
 
@@ -1758,6 +1779,72 @@ function bindeModalVorlageSpeichernEvents() {
   });
 }
 
+// ---- Eintrag Bearbeiten Modal ----
+
+function bauEintragBearbeitenModal() {
+  const zutaten = state.editZutaten;
+  if (!zutaten) return '';
+  return `
+    <div class="modal-json-tab">
+      <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:14px">
+        Nur die Gramm-Menge anpassen — alle Nährwerte werden proportional berechnet.
+      </p>
+      ${zutaten.map((z, i) => `
+        <div class="vorlage-zutat-card" data-index="${i}">
+          <div class="vorlage-zutat-name">${escHtml(z.name)}</div>
+          <div class="vorlage-zutat-menge-row">
+            <label class="form-label">Menge (g)</label>
+            <input type="number" class="form-input vl-menge-field" data-idx="${i}" value="${z.menge}" min="0" step="1">
+          </div>
+          <div class="vorlage-zutat-stats">
+            <span class="vl-calc vl-stat" data-idx="${i}" data-field="kalorien" data-unit="kcal">${Math.round(z.kalorien || 0)} kcal</span>
+            <span class="vl-calc vl-stat" data-idx="${i}" data-field="protein" data-label="P">${runden(z.protein || 0)}g P</span>
+            <span class="vl-calc vl-stat" data-idx="${i}" data-field="fett" data-label="F">${runden(z.fett || 0)}g F</span>
+            <span class="vl-calc vl-stat" data-idx="${i}" data-field="kohlenhydrate" data-label="KH">${runden(z.kohlenhydrate || 0)}g KH</span>
+          </div>
+        </div>`).join('')}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+        <button class="btn btn-primary" id="modal-confirm">Speichern</button>
+      </div>
+    </div>`;
+}
+
+function eintragAktualisieren() {
+  const idx = db.eintraege.findIndex(e => e.id === state.editEintragId);
+  if (idx === -1) return;
+  db.eintraege[idx] = { ...db.eintraege[idx], zutaten: state.editZutaten };
+  speichereDaten();
+  schliesseModal();
+  renderView();
+  zeigeToast('Eintrag aktualisiert', 'success');
+}
+
+function bindeEintragBearbeitenEvents() {
+  document.getElementById('modal-confirm')?.addEventListener('click', eintragAktualisieren);
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+
+  document.querySelectorAll('.vl-menge-field').forEach(input => {
+    input.addEventListener('input', () => {
+      const idx = parseInt(input.dataset.idx);
+      const newMenge = parseFloat(input.value) || 0;
+      const orig = state.editZutatenOriginal[idx];
+      const ratio = orig.menge > 0 ? newMenge / orig.menge : 0;
+
+      state.editZutaten[idx].menge = newMenge;
+      NUTRIENT_FIELDS.forEach(f => {
+        state.editZutaten[idx][f.key] = (orig[f.key] || 0) * ratio;
+      });
+
+      document.querySelectorAll(`.vl-calc[data-idx="${idx}"]`).forEach(span => {
+        const val = state.editZutaten[idx][span.dataset.field] || 0;
+        if (span.dataset.unit === 'kcal') span.textContent = `${Math.round(val)} kcal`;
+        else span.textContent = `${runden(val)}g ${span.dataset.label}`;
+      });
+    });
+  });
+}
+
 // ---- Aktivität Modal ----
 
 function bauAktivitaetManuellTab() {
@@ -2090,6 +2177,18 @@ function bindeViewEvents() {
       const target = document.getElementById(btn.dataset.target);
       const hidden = target.classList.toggle('hidden');
       btn.textContent = hidden ? 'Details anzeigen ▾' : 'Details ausblenden ▴';
+    });
+  });
+
+  // Eintrag bearbeiten
+  c.querySelectorAll('.edit-eintrag-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const eintrag = db.eintraege.find(e => e.id === btn.dataset.id);
+      if (!eintrag) return;
+      state.editEintragId = eintrag.id;
+      state.editZutatenOriginal = JSON.parse(JSON.stringify(eintrag.zutaten));
+      state.editZutaten = JSON.parse(JSON.stringify(eintrag.zutaten));
+      oeffneModal('eintrag-bearbeiten', null);
     });
   });
 
