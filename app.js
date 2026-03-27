@@ -111,6 +111,9 @@ const state = {
   currentView: 'heute',
   verlaufDate: null,
   chartRange: 14,
+  chartModus: 'preset',  // 'preset' | 'custom'
+  chartVon: null,        // YYYY-MM-DD
+  chartBis: null,        // YYYY-MM-DD
   modalTab: 'json',
   modalTipo: 'mahlzeit',
   modalDate: null,
@@ -850,15 +853,27 @@ function bauBilanzSection(datum) {
 
 function bauGrafikenView() {
   const hatGewicht = db.gewicht_eintraege.length > 0;
+  const isCustom = state.chartModus === 'custom';
+  const vonVal = state.chartVon || heuteStr();
+  const bisVal = state.chartBis || heuteStr();
   return `
     <div class="view-header">
       <div><h1 class="view-title">Grafiken</h1></div>
       <div class="range-selector">
         ${[7, 14, 30].map(r => `
-          <button class="range-btn ${r === state.chartRange ? 'active' : ''}" data-range="${r}">${r} Tage</button>
+          <button class="range-btn ${!isCustom && r === state.chartRange ? 'active' : ''}" data-range="${r}">${r} Tage</button>
         `).join('')}
+        <button class="range-btn ${isCustom ? 'active' : ''}" id="range-custom-btn">Zeitraum</button>
       </div>
     </div>
+    ${isCustom ? `
+      <div class="custom-range-row">
+        <label class="form-label">Von</label>
+        <input type="date" id="chart-von" class="form-input form-input--sm" value="${vonVal}" max="${heuteStr()}">
+        <label class="form-label">Bis</label>
+        <input type="date" id="chart-bis" class="form-input form-input--sm" value="${bisVal}" max="${heuteStr()}">
+        <button class="btn btn-primary btn-sm" id="chart-range-apply">Anwenden</button>
+      </div>` : ''}
     <div class="charts-grid">
       <div class="chart-card">
         <h2 class="chart-title">Kalorien pro Tag</h2>
@@ -887,8 +902,24 @@ function bauGrafikenView() {
     </div>`;
 }
 
+function tageImZeitraum() {
+  if (state.chartModus === 'custom' && state.chartVon && state.chartBis) {
+    const von = new Date(state.chartVon + 'T00:00:00');
+    const bis = new Date(state.chartBis + 'T00:00:00');
+    if (von > bis) return letzteNTage(state.chartRange);
+    const result = [];
+    const cur = new Date(von);
+    while (cur <= bis) {
+      result.push(cur.toLocaleDateString('sv'));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return result;
+  }
+  return letzteNTage(state.chartRange);
+}
+
 function initCharts() {
-  const tage = letzteNTage(state.chartRange);
+  const tage = tageImZeitraum();
   const labels = tage.map(d => new Date(d + 'T00:00:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }));
 
   const kcalDaten    = tage.map(d => Math.round(tagesSumme(d).kalorien || 0));
@@ -2236,9 +2267,31 @@ function bindeViewEvents() {
   });
   c.querySelector('#back-btn')?.addEventListener('click', () => { state.verlaufDate = null; renderView(); });
 
-  // Chart Range
-  c.querySelectorAll('.range-btn').forEach(btn => {
-    btn.addEventListener('click', () => { state.chartRange = parseInt(btn.dataset.range); renderView(); });
+  // Chart Range – Preset-Buttons
+  c.querySelectorAll('.range-btn[data-range]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.chartRange = parseInt(btn.dataset.range);
+      state.chartModus = 'preset';
+      renderView();
+    });
+  });
+
+  // Chart Range – Benutzerdefiniert
+  c.querySelector('#range-custom-btn')?.addEventListener('click', () => {
+    state.chartModus = 'custom';
+    if (!state.chartVon) state.chartVon = letzteNTage(state.chartRange)[0];
+    if (!state.chartBis) state.chartBis = heuteStr();
+    renderView();
+  });
+
+  c.querySelector('#chart-range-apply')?.addEventListener('click', () => {
+    const von = document.getElementById('chart-von')?.value;
+    const bis = document.getElementById('chart-bis')?.value;
+    if (!von || !bis) return;
+    if (von > bis) { zeigeToast('Startdatum muss vor Enddatum liegen', 'error'); return; }
+    state.chartVon = von;
+    state.chartBis = bis;
+    renderView();
   });
 
   // Aktivität hinzufügen
