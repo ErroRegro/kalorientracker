@@ -1494,7 +1494,7 @@ function bauMahlzeitJsonTab() {
       <div class="form-group">
         <label class="form-label">Datum & Uhrzeit</label>
         <div class="datetime-row">
-          <input type="date" id="entry-date" class="form-input" value="${state.modalDate}" max="${heuteStr()}">
+          <input type="date" id="entry-date" class="form-input" value="${state.modalDate}">
           <input type="time" id="entry-time" class="form-input" value="${zeitStr}">
         </div>
       </div>
@@ -1579,7 +1579,7 @@ function bauVorlagenEditView() {
       <div class="form-group">
         <label class="form-label">Datum & Uhrzeit</label>
         <div class="datetime-row">
-          <input type="date" id="vl-datum" class="form-input" value="${state.modalDate}" max="${heuteStr()}">
+          <input type="date" id="vl-datum" class="form-input" value="${state.modalDate}">
           <input type="time" id="vl-zeit" class="form-input" value="${zeitStr}">
         </div>
       </div>
