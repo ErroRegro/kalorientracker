@@ -1839,7 +1839,13 @@ function bauEintragBearbeitenModal() {
       </p>
       ${zutaten.map((z, i) => `
         <div class="vorlage-zutat-card" data-index="${i}">
-          <div class="vorlage-zutat-name">${escHtml(z.name)}</div>
+          <div class="vorlage-zutat-header-row">
+            <span class="vorlage-zutat-name">${escHtml(z.name)}</span>
+            ${zutaten.length > 1 ? `
+              <button class="icon-btn icon-btn--danger edit-zutat-delete-btn" data-idx="${i}" title="Zutat entfernen">
+                ${ICONS.trash}
+              </button>` : ''}
+          </div>
           <div class="vorlage-zutat-menge-row">
             <label class="form-label">Menge (g)</label>
             <input type="number" class="form-input vl-menge-field" data-idx="${i}" value="${z.menge}" min="0" step="1">
@@ -1871,6 +1877,15 @@ function eintragAktualisieren() {
 function bindeEintragBearbeitenEvents() {
   document.getElementById('modal-confirm')?.addEventListener('click', eintragAktualisieren);
   document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+
+  document.querySelectorAll('.edit-zutat-delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.editZutaten.splice(idx, 1);
+      state.editZutatenOriginal.splice(idx, 1);
+      renderModalBody();
+    });
+  });
 
   document.querySelectorAll('.vl-menge-field').forEach(input => {
     input.addEventListener('input', () => {

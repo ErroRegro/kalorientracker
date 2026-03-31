@@ -1468,6 +1468,13 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 8px;
 }
 
+.vorlage-zutat-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
 .vorlage-zutat-name {
   font-weight: 600;
   font-size: 13px;
