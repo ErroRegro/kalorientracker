@@ -609,6 +609,44 @@ a { color: inherit; text-decoration: none; }
   color: #f43f5e;
 }
 
+.gewicht-change-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+}
+
+.gewicht-change-label {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.gewicht-change-value {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.gewicht-change-value.gewicht-change--verlust {
+  color: #34d399;
+}
+
+.gewicht-change-value.gewicht-change--zunahme {
+  color: #f59e0b;
+}
+
+.gewicht-change-value.gewicht-change--stabil {
+  color: var(--text-2);
+}
+
+.gewicht-change-range {
+  color: var(--text-3);
+  font-size: 0.75rem;
+}
+
 .chart-container {
   position: relative;
   height: 220px;
@@ -1449,11 +1487,69 @@ a { color: inherit; text-decoration: none; }
   text-overflow: ellipsis;
 }
 
+.vorlage-multiplikator-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.vorlage-multiplikator-row .form-label {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.vorlage-multiplikator-row .form-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.vorlage-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.vorlage-actions .btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+
 /* Edit-View */
 .vorlagen-edit {
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+
+.eintrag-multiplikator-section {
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.eintrag-multiplikator-section .form-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.eintrag-multiplikator-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.eintrag-multiplikator-controls .form-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .vorlage-zutat-card {
@@ -1693,4 +1789,164 @@ a { color: inherit; text-decoration: none; }
 
 .fasting-meta strong {
   color: var(--text-primary);
+}
+
+/* ===== PLANUNGEN VIEW ===== */
+
+.planungen-liste {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+
+.planung-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.15s;
+}
+
+.planung-card:hover {
+  border-color: var(--accent-border);
+  background: var(--bg-3);
+}
+
+.planung-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.planung-card-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.planung-card-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.planung-card-meta {
+  font-size: 0.85rem;
+  color: var(--text-2);
+}
+
+.planung-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: var(--bg-1);
+  border-radius: var(--radius-sm);
+}
+
+.planung-preview-item {
+  font-size: 0.9rem;
+  color: var(--text-2);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.planung-preview-item:last-child {
+  border-bottom: none;
+}
+
+.planung-preview-more {
+  font-size: 0.85rem;
+  color: var(--text-3);
+  font-style: italic;
+  margin-top: 4px;
+}
+
+.planung-leer-text {
+  font-size: 0.9rem;
+  color: var(--text-3);
+  font-style: italic;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.planung-card-footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.planung-detail-actions {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.view-title--editable {
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs);
+  transition: background 0.15s;
+}
+
+.view-title--editable:hover {
+  background: var(--bg-hover);
+}
+
+.view-title-input {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-1);
+  background: var(--bg-2);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+  outline: none;
+}
+
+.naehrwerte-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  padding: 20px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+.naehrwert-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.naehrwert-wert {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-light);
+}
+
+.naehrwert-label {
+  font-size: 0.8rem;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.eintrag-nr {
+  display: inline-block;
+  background: var(--accent-bg);
+  color: var(--accent-light);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-right: 8px;
 }

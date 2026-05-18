@@ -25,18 +25,20 @@ const AKTIVITAETS_LEVELS = [
 ];
 
 const NAV_ITEMS = [
-  { view: 'heute',    label: 'Heute',    icon: 'home'      },
-  { view: 'verlauf',  label: 'Verlauf',  icon: 'calendar'  },
-  { view: 'fasten',   label: 'Fasten',   icon: 'timer'     },
-  { view: 'grafiken', label: 'Grafiken', icon: 'chart'     },
-  { view: 'profil',   label: 'Profil',   icon: 'user'      },
-  { view: 'daten',    label: 'Daten',    icon: 'database'  },
+  { view: 'heute',      label: 'Heute',      icon: 'home'      },
+  { view: 'verlauf',    label: 'Verlauf',    icon: 'calendar'  },
+  { view: 'planungen',  label: 'Planungen',  icon: 'clipboard' },
+  { view: 'fasten',     label: 'Fasten',     icon: 'timer'     },
+  { view: 'grafiken',   label: 'Grafiken',   icon: 'chart'     },
+  { view: 'profil',     label: 'Profil',     icon: 'user'      },
+  { view: 'daten',      label: 'Daten',      icon: 'database'  },
 ];
 
 const ICONS = {
   home:      `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>`,
   timer:     `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M12 5V3M10 3h4"/></svg>`,
   calendar:  `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>`,
+  clipboard: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`,
   chart:     `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>`,
   user:      `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>`,
   database:  `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4.03 3-9 3S3 13.66 3 12M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/></svg>`,
@@ -129,6 +131,8 @@ const state = {
   editEintragId: null,       // ID des Eintrags der gerade bearbeitet wird
   editZutaten: null,         // deep-copy der Zutaten in Bearbeitung
   editZutatenOriginal: null, // Originalwerte als Referenz für Proportionalrechnung
+  aktivePlanungId: null,     // ID der aktuell angezeigten/bearbeiteten Planung
+  planungEditMode: false,    // true wenn Planung-Details-Ansicht aktiv
 };
 
 // ===== DATENBANK =====
@@ -141,6 +145,7 @@ let db = {
   tages_aktivitaetslevel: {},
   eintraege: [],
   mahlzeit_vorlagen: [],
+  tagesplanungen: [], // Array von { id, name, eintraege: [...] }
   fasting_timer: null, // { ziel_stunden, start_zeit (ISO) } | null
 };
 
@@ -157,6 +162,7 @@ function ladeDaten() {
         if (!db.aktivitaet_eintraege) db.aktivitaet_eintraege = [];
         if (!db.tages_aktivitaetslevel) db.tages_aktivitaetslevel = {};
         if (!db.mahlzeit_vorlagen) db.mahlzeit_vorlagen = [];
+        if (!db.tagesplanungen) db.tagesplanungen = [];
         if (db.fasting_timer === undefined) db.fasting_timer = null;
         db.version = 3;
       }
@@ -226,6 +232,88 @@ function vorlageHinzufuegen(vorlage) {
 function vorlageLoeschen(id) {
   db.mahlzeit_vorlagen = db.mahlzeit_vorlagen.filter(v => v.id !== id);
   speichereDaten();
+}
+
+// ===== TAGESPLANUNGEN =====
+
+function planungErstellen(name) {
+  const planung = {
+    id: genId(),
+    name: name.trim() || 'Neue Planung',
+    eintraege: [],
+    erstellt: new Date().toISOString(),
+  };
+  db.tagesplanungen.push(planung);
+  speichereDaten();
+  return planung;
+}
+
+function planungHinzufuegen(planungId, eintrag) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  const neuerEintrag = {
+    ...eintrag,
+    id: genId(),
+  };
+  planung.eintraege.push(neuerEintrag);
+  speichereDaten();
+  return neuerEintrag;
+}
+
+function planungEintragLoeschen(planungId, eintragId) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  planung.eintraege = planung.eintraege.filter(e => e.id !== eintragId);
+  speichereDaten();
+}
+
+function planungEintragBearbeiten(planungId, eintragId, neueZutaten) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  const eintrag = planung.eintraege.find(e => e.id === eintragId);
+  if (!eintrag) return;
+  
+  eintrag.zutaten = neueZutaten;
+  speichereDaten();
+}
+
+function planungUmbenennen(planungId, neuerName) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  planung.name = neuerName.trim() || 'Neue Planung';
+  speichereDaten();
+}
+
+function planungLoeschen(planungId) {
+  db.tagesplanungen = db.tagesplanungen.filter(p => p.id !== planungId);
+  speichereDaten();
+}
+
+function planungAnwenden(planungId, zielDatum) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  planung.eintraege.forEach((e, idx) => {
+    const jetzt = new Date();
+    const baseZeit = new Date(jetzt);
+    baseZeit.setHours(8, 0, 0, 0); // Standardzeit 08:00 Uhr
+    baseZeit.setMinutes(baseZeit.getMinutes() + idx * 30); // Jeder Eintrag 30 Min später
+    
+    const zeit = baseZeit.toTimeString().slice(0, 5);
+    
+    eintragHinzufuegen({
+      id: genId(),
+      datum: zielDatum,
+      zeitstempel: new Date(`${zielDatum}T${zeit}:00`).toISOString(),
+      notiz: e.notiz || '',
+      zutaten: JSON.parse(JSON.stringify(e.zutaten)), // Deep copy
+      vonVorlage: false, // Planungs-Einträge werden als direkte Einträge behandelt
+    });
+  });
 }
 
 // ===== GEWICHT-DATEN =====
@@ -413,12 +501,13 @@ function renderView() {
   }
 
   switch (state.currentView) {
-    case 'heute':    container.innerHTML = bauHeuteView();    break;
-    case 'verlauf':  container.innerHTML = bauVerlaufView();  break;
-    case 'fasten':   container.innerHTML = bauFastenView();   break;
-    case 'grafiken': container.innerHTML = bauGrafikenView(); break;
-    case 'profil':   container.innerHTML = bauProfilView();   break;
-    case 'daten':    container.innerHTML = bauDatenView();    break;
+    case 'heute':     container.innerHTML = bauHeuteView();     break;
+    case 'verlauf':   container.innerHTML = bauVerlaufView();   break;
+    case 'planungen': container.innerHTML = bauPlanungenView(); break;
+    case 'fasten':    container.innerHTML = bauFastenView();    break;
+    case 'grafiken':  container.innerHTML = bauGrafikenView();  break;
+    case 'profil':    container.innerHTML = bauProfilView();    break;
+    case 'daten':     container.innerHTML = bauDatenView();     break;
   }
 
   if (state.currentView === 'grafiken') initCharts();
@@ -896,7 +985,10 @@ function bauGrafikenView() {
       </div>
       ${hatGewicht ? `
         <div class="chart-card chart-card--full">
-          <h2 class="chart-title">Gewichtsverlauf</h2>
+          <div class="chart-card-header">
+            <h2 class="chart-title">Gewichtsverlauf</h2>
+            <div id="gewicht-change-badge" class="gewicht-change-badge"></div>
+          </div>
           <div class="chart-container"><canvas id="chart-gewicht"></canvas></div>
         </div>` : ''}
     </div>`;
@@ -1061,37 +1153,112 @@ function initCharts() {
     });
   }
 
-  // Gewichtsverlauf
+  // Gewichtsverlauf mit zeitbasierter X-Achse
   const gewichtCtx = document.getElementById('chart-gewicht');
   if (gewichtCtx && db.gewicht_eintraege.length > 0) {
     const gewichtSorted = [...db.gewicht_eintraege].sort((a, b) => a.datum.localeCompare(b.datum));
-    const gwLabels = gewichtSorted.map(e => datumKurz(e.datum));
-    const gwDaten = gewichtSorted.map(e => e.gewicht);
+    
+    // Chart.js erwartet {x: Date, y: Wert} für zeitbasierte Darstellung
+    const gwDaten = gewichtSorted.map(e => ({
+      x: e.datum, // YYYY-MM-DD String wird automatisch zu Date konvertiert
+      y: e.gewicht
+    }));
+    
+    // Gewichtsänderung berechnen
+    const ersterWert = gewichtSorted[0].gewicht;
+    const letzterWert = gewichtSorted[gewichtSorted.length - 1].gewicht;
+    const differenz = letzterWert - ersterWert;
+    const differenzText = differenz > 0 ? `+${runden(differenz)}` : runden(differenz);
+    
     state.activeCharts.gewicht = new Chart(gewichtCtx, {
       type: 'line',
       data: {
-        labels: gwLabels,
         datasets: [{
           label: 'Gewicht (kg)',
           data: gwDaten,
           borderColor: '#6366f1',
-          backgroundColor: 'rgba(99,102,241,0.1)',
-          borderWidth: 2,
+          backgroundColor: 'rgba(99,102,241,0.08)',
+          borderWidth: 2.5,
           pointBackgroundColor: '#6366f1',
-          pointRadius: 5,
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointRadius: 6,
+          pointHoverRadius: 8,
           tension: 0.3,
           fill: true,
         }]
       },
       options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { ...tooltipDefaults, callbacks: { label: ctx => ` ${ctx.formattedValue} kg` } } },
+        responsive: true, 
+        maintainAspectRatio: false,
+        plugins: { 
+          legend: { display: false }, 
+          tooltip: { 
+            ...tooltipDefaults, 
+            callbacks: { 
+              title: ctx => {
+                const datum = new Date(ctx[0].parsed.x);
+                return datum.toLocaleDateString('de-DE', { 
+                  weekday: 'short',
+                  day: '2-digit', 
+                  month: 'short', 
+                  year: 'numeric' 
+                });
+              },
+              label: ctx => ` ${ctx.parsed.y.toFixed(1)} kg` 
+            } 
+          } 
+        },
         scales: {
-          x: achsenDefaults.x,
-          y: { ...achsenDefaults.y, ticks: { ...achsenDefaults.y.ticks, callback: v => `${v} kg` } }
+          x: { 
+            type: 'time',
+            time: {
+              unit: 'day',
+              displayFormats: { 
+                day: 'dd.MM',
+                week: 'dd.MM',
+                month: 'MMM yy' 
+              },
+              tooltipFormat: 'dd.MM.yyyy'
+            },
+            ticks: { 
+              color: '#8892a6', 
+              font: { size: 11 }, 
+              maxRotation: 45,
+              minRotation: 0,
+              autoSkip: true,
+              autoSkipPadding: 15,
+              maxTicksLimit: 12
+            }, 
+            grid: { 
+              color: '#1c2233',
+              drawTicks: true
+            }
+          },
+          y: { 
+            ...achsenDefaults.y, 
+            ticks: { 
+              ...achsenDefaults.y.ticks, 
+              callback: v => `${v} kg` 
+            },
+            // Y-Achse dynamisch anpassen für bessere Lesbarkeit
+            suggestedMin: Math.floor(Math.min(...gwDaten.map(d => d.y)) - 2),
+            suggestedMax: Math.ceil(Math.max(...gwDaten.map(d => d.y)) + 2)
+          }
         }
       }
     });
+    
+    // Gewichtsänderungs-Badge aktualisieren
+    const gwBadge = document.getElementById('gewicht-change-badge');
+    if (gwBadge && gewichtSorted.length > 1) {
+      const cls = differenz < 0 ? 'gewicht-change--verlust' : differenz > 0 ? 'gewicht-change--zunahme' : 'gewicht-change--stabil';
+      gwBadge.innerHTML = `
+        <span class="gewicht-change-label">Änderung:</span>
+        <span class="gewicht-change-value ${cls}">${differenzText} kg</span>
+        <span class="gewicht-change-range">(${datumKurz(gewichtSorted[0].datum)} – ${datumKurz(gewichtSorted[gewichtSorted.length - 1].datum)})</span>
+      `;
+    }
   }
 }
 
@@ -1195,6 +1362,195 @@ function bauProfilView() {
       </div>
 
     </div>`;
+}
+
+// ===== TAGESPLANUNGEN VIEW =====
+
+function bauPlanungenView() {
+  if (state.planungEditMode && state.aktivePlanungId) {
+    return bauPlanungDetailView();
+  }
+  
+  const planungen = db.tagesplanungen.sort((a, b) => b.erstellt.localeCompare(a.erstellt));
+  
+  return `
+    <div class="view-header">
+      <div><h1 class="view-title">Tagesplanungen</h1></div>
+      <button class="btn btn-primary" id="neue-planung-btn">
+        ${ICONS.plus} Neue Planung
+      </button>
+    </div>
+    
+    ${planungen.length === 0 ? `
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.clipboard}</div>
+        <h2>Noch keine Planungen</h2>
+        <p>Erstelle deine erste Tagesplanung, um Mahlzeiten im Voraus zu planen.</p>
+        <button class="btn btn-primary" id="erste-planung-btn">
+          ${ICONS.plus} Erste Planung erstellen
+        </button>
+      </div>
+    ` : `
+      <div class="planungen-liste">
+        ${planungen.map(p => {
+          const summen = p.eintraege.length > 0 
+            ? p.eintraege.map(e => summiereNaehrstoffe(e.zutaten))
+                .reduce((acc, s) => {
+                  NUTRIENT_FIELDS.forEach(f => acc[f.key] = (acc[f.key] || 0) + s[f.key]);
+                  return acc;
+                }, {})
+            : { kalorien: 0 };
+          
+          return `
+            <div class="planung-card" data-id="${p.id}">
+              <div class="planung-card-header">
+                <h3 class="planung-card-title">${escHtml(p.name)}</h3>
+                <div class="planung-card-actions">
+                  <button class="btn-icon planung-bearbeiten-btn" data-id="${p.id}" title="Bearbeiten">
+                    ${ICONS.pencil}
+                  </button>
+                  <button class="btn-icon planung-loeschen-btn" data-id="${p.id}" title="Löschen">
+                    ${ICONS.trash}
+                  </button>
+                </div>
+              </div>
+              <div class="planung-card-meta">
+                ${p.eintraege.length} Mahlzeit${p.eintraege.length !== 1 ? 'en' : ''} · 
+                ${Math.round(summen.kalorien)} kcal gesamt
+              </div>
+              ${p.eintraege.length > 0 ? `
+                <div class="planung-preview">
+                  ${p.eintraege.slice(0, 3).map(e => {
+                    const s = summiereNaehrstoffe(e.zutaten);
+                    return `<div class="planung-preview-item">
+                      ${e.notiz ? escHtml(e.notiz) : 'Mahlzeit'} (${Math.round(s.kalorien)} kcal)
+                    </div>`;
+                  }).join('')}
+                  ${p.eintraege.length > 3 ? `<div class="planung-preview-more">+${p.eintraege.length - 3} weitere</div>` : ''}
+                </div>
+              ` : '<p class="planung-leer-text">Noch keine Mahlzeiten hinzugefügt</p>'}
+              <div class="planung-card-footer">
+                <button class="btn btn-secondary planung-oeffnen-btn" data-id="${p.id}">
+                  Details anzeigen
+                </button>
+                <button class="btn btn-primary planung-anwenden-btn" data-id="${p.id}">
+                  ${ICONS.lightning} Planung anwenden
+                </button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `}
+  `;
+}
+
+function bauPlanungDetailView() {
+  const planung = db.tagesplanungen.find(p => p.id === state.aktivePlanungId);
+  if (!planung) {
+    state.planungEditMode = false;
+    state.aktivePlanungId = null;
+    return bauPlanungenView();
+  }
+  
+  const summen = planung.eintraege.length > 0 
+    ? planung.eintraege.map(e => summiereNaehrstoffe(e.zutaten))
+        .reduce((acc, s) => {
+          NUTRIENT_FIELDS.forEach(f => acc[f.key] = (acc[f.key] || 0) + s[f.key]);
+          return acc;
+        }, {})
+    : { kalorien: 0, eiweiss: 0, kohlenhydrate: 0, fett: 0 };
+  
+  return `
+    <div class="view-header">
+      <button class="btn btn-ghost" id="planung-zurueck-btn">
+        ${ICONS.chevronL} Zurück
+      </button>
+      <div>
+        <h1 class="view-title view-title--editable" id="planung-titel-display">${escHtml(planung.name)}</h1>
+        <input type="text" class="view-title-input" id="planung-titel-input" value="${escHtml(planung.name)}" style="display: none;">
+      </div>
+      <button class="btn btn-primary" id="planung-mahlzeit-hinzufuegen-btn">
+        ${ICONS.plus} Mahlzeit
+      </button>
+    </div>
+    
+    <div class="naehrwerte-summary">
+      <div class="naehrwert-item">
+        <span class="naehrwert-wert">${Math.round(summen.kalorien)}</span>
+        <span class="naehrwert-label">Kalorien</span>
+      </div>
+      <div class="naehrwert-item">
+        <span class="naehrwert-wert">${runden(summen.eiweiss)}g</span>
+        <span class="naehrwert-label">Eiweiß</span>
+      </div>
+      <div class="naehrwert-item">
+        <span class="naehrwert-wert">${runden(summen.kohlenhydrate)}g</span>
+        <span class="naehrwert-label">Kohlenhydrate</span>
+      </div>
+      <div class="naehrwert-item">
+        <span class="naehrwert-wert">${runden(summen.fett)}g</span>
+        <span class="naehrwert-label">Fett</span>
+      </div>
+    </div>
+    
+    ${planung.eintraege.length === 0 ? `
+      <div class="empty-state">
+        <div class="empty-state-icon">${ICONS.scale}</div>
+        <h2>Keine Mahlzeiten</h2>
+        <p>Füge Mahlzeiten zu dieser Planung hinzu.</p>
+        <button class="btn btn-primary" id="planung-erste-mahlzeit-btn">
+          ${ICONS.plus} Erste Mahlzeit hinzufügen
+        </button>
+      </div>
+    ` : `
+      <div class="eintraege-liste">
+        ${planung.eintraege.map((e, idx) => {
+          const summen = summiereNaehrstoffe(e.zutaten);
+          return `
+            <div class="eintrag-card">
+              <div class="eintrag-card-header">
+                <div>
+                  <span class="eintrag-nr">#${idx + 1}</span>
+                  <h3 class="eintrag-titel">${e.notiz ? escHtml(e.notiz) : 'Mahlzeit'}</h3>
+                </div>
+                <div class="eintrag-card-actions">
+                  <button class="btn-icon planung-eintrag-bearbeiten-btn" data-eintrag-id="${e.id}" title="Bearbeiten">
+                    ${ICONS.pencil}
+                  </button>
+                  <button class="btn-icon planung-eintrag-loeschen-btn" data-eintrag-id="${e.id}" title="Löschen">
+                    ${ICONS.trash}
+                  </button>
+                </div>
+              </div>
+              <div class="eintrag-zutaten">
+                ${e.zutaten.map(z => `
+                  <div class="zutat-zeile">
+                    <span class="zutat-name">${escHtml(z.name)}</span>
+                    <span class="zutat-menge">${runden(z.menge)}g</span>
+                  </div>
+                `).join('')}
+              </div>
+              <div class="eintrag-card-footer">
+                <span class="eintrag-naehrwerte">
+                  ${Math.round(summen.kalorien)} kcal · 
+                  E: ${runden(summen.eiweiss)}g · 
+                  K: ${runden(summen.kohlenhydrate)}g · 
+                  F: ${runden(summen.fett)}g
+                </span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+      
+      <div class="planung-detail-actions">
+        <button class="btn btn-primary btn--full" id="planung-anwenden-detail-btn">
+          ${ICONS.lightning} Planung anwenden
+        </button>
+      </div>
+    `}
+  `;
 }
 
 // ===== DATEN =====
@@ -1384,14 +1740,15 @@ function bauLeerStatus(titel, untertitel) {
 
 // ===== MODAL =====
 
-function oeffneModal(tipo, datum) {
+function oeffneModal(tipo, datum, fuerPlanung = false) {
   state.parsedIngredients = null;
   state.parsedActivities = null;
   state.parsedWeights = null;
   state.vorlagenEdit = null;
   state.vorlagenOriginal = null;
+  state.vorlagePending = fuerPlanung ? 'planung' : null; // Marker ob für Planung
   // editEintragId/editZutaten werden vom Aufrufer gesetzt, nicht hier zurückgesetzt
-  if (tipo !== 'eintrag-bearbeiten') {
+  if (tipo !== 'eintrag-bearbeiten' && tipo !== 'planung-eintrag-bearbeiten') {
     state.editEintragId = null;
     state.editZutaten = null;
     state.editZutatenOriginal = null;
@@ -1400,17 +1757,19 @@ function oeffneModal(tipo, datum) {
   state.modalDate = datum || heuteStr();
 
   const titles = {
-    mahlzeit:              'Mahlzeit hinzufügen',
-    aktivitaet:            'Aktivität hinzufügen',
-    'gewicht-json':        'Gewicht importieren (JSON)',
-    'vorlage-speichern':   'Als Vorlage speichern',
-    'eintrag-bearbeiten':  'Eintrag bearbeiten',
+    mahlzeit:                     fuerPlanung ? 'Mahlzeit zur Planung hinzufügen' : 'Mahlzeit hinzufügen',
+    aktivitaet:                   'Aktivität hinzufügen',
+    'gewicht-json':               'Gewicht importieren (JSON)',
+    'vorlage-speichern':          'Als Vorlage speichern',
+    'eintrag-bearbeiten':         'Eintrag bearbeiten',
+    'planung-eintrag-bearbeiten': 'Planungs-Eintrag bearbeiten',
   };
   document.getElementById('modal-title').textContent = titles[tipo] || 'Hinzufügen';
 
   // Standard-Tab je nach Typ
   if (tipo === 'aktivitaet') state.modalTab = 'manuell';
   else if (tipo === 'vorlage-speichern') state.modalTab = 'speichern';
+  else if (tipo === 'planung-eintrag-bearbeiten') state.modalTab = 'edit';
   else state.modalTab = 'json';
 
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -1435,12 +1794,19 @@ function schliesseModal() {
 function renderModalBody() {
   // Tabs rendern
   const vorlagenAnzahl = db.mahlzeit_vorlagen.length;
+  const eintraegeAnzahl = db.eintraege.filter(e => !e.vonVorlage).length; // Nur direkte Einträge zählen
   const tabsKonfig = {
-    mahlzeit:              [{ key: 'json', label: 'JSON einfügen' }, { key: 'vorlagen', label: `Vorlagen${vorlagenAnzahl > 0 ? ` (${vorlagenAnzahl})` : ''}` }, { key: 'prompt', label: 'KI-Prompt' }],
-    aktivitaet:            [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
-    'gewicht-json':        [{ key: 'json', label: 'JSON einfügen' }],
-    'vorlage-speichern':   [],
-    'eintrag-bearbeiten':  [],
+    mahlzeit:                     [
+      { key: 'json', label: 'JSON einfügen' }, 
+      { key: 'vorlagen', label: `Vorlagen${vorlagenAnzahl > 0 ? ` (${vorlagenAnzahl})` : ''}` }, 
+      { key: 'historie', label: `Einträge Historie${eintraegeAnzahl > 0 ? ` (${eintraegeAnzahl})` : ''}` },
+      { key: 'prompt', label: 'KI-Prompt' }
+    ],
+    aktivitaet:                   [{ key: 'manuell', label: 'Manuell' }, { key: 'json', label: 'JSON einfügen' }, { key: 'prompt', label: 'KI-Prompt' }],
+    'gewicht-json':               [{ key: 'json', label: 'JSON einfügen' }],
+    'vorlage-speichern':          [],
+    'eintrag-bearbeiten':         [],
+    'planung-eintrag-bearbeiten': [],
   };
   const tabs = tabsKonfig[state.modalTipo] ?? tabsKonfig.mahlzeit;
   const tabsEl = document.getElementById('modal-tabs');
@@ -1463,6 +1829,9 @@ function renderModalBody() {
     } else if (state.modalTab === 'vorlagen') {
       body.innerHTML = bauMahlzeitVorlagenTab();
       bindeModalVorlagenEvents();
+    } else if (state.modalTab === 'historie') {
+      body.innerHTML = bauEintraegeHistorieTab();
+      bindeModalEintraegeHistorieEvents();
     } else {
       body.innerHTML = bauMahlzeitPromptTab();
       bindeModalMahlzeitEvents();
@@ -1481,6 +1850,9 @@ function renderModalBody() {
   } else if (state.modalTipo === 'eintrag-bearbeiten') {
     body.innerHTML = bauEintragBearbeitenModal();
     bindeEintragBearbeitenEvents();
+  } else if (state.modalTipo === 'planung-eintrag-bearbeiten') {
+    body.innerHTML = bauPlanungEintragBearbeitenModal();
+    bindePlanungEintragBearbeitenEvents();
   }
 }
 
@@ -1561,7 +1933,75 @@ function bauMahlzeitVorlagenTab() {
               </button>
             </div>
             <div class="vorlage-zutaten-preview">${v.zutaten.map(z => escHtml(z.name)).join(', ')}</div>
-            <button class="btn btn-primary btn-full verwenden-btn" data-id="${v.id}">Verwenden →</button>
+            <div class="vorlage-multiplikator-row">
+              <label class="form-label">Multiplikator</label>
+              <input type="number" class="form-input form-input--sm vorlage-multiplikator" data-id="${v.id}" value="1" min="0.1" max="10" step="0.1">
+            </div>
+            <div class="vorlage-actions">
+              <button class="btn btn-primary vorlage-jetzt-btn" data-id="${v.id}">
+                ${ICONS.lightning} Jetzt gegessen
+              </button>
+              <button class="btn btn-secondary vorlage-anpassen-btn" data-id="${v.id}">
+                ${ICONS.pencil} Anpassen
+              </button>
+            </div>
+          </div>`;
+      }).join('')}
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+      </div>
+    </div>`;
+}
+
+function bauEintraegeHistorieTab() {
+  if (state.vorlagenEdit) return bauVorlagenEditView();
+  
+  // Nur Einträge die NICHT über Vorlagen hinzugefügt wurden (sortiert nach Datum, neueste zuerst)
+  const eintraege = [...db.eintraege]
+    .filter(e => !e.vonVorlage)
+    .sort((a, b) => b.zeitstempel.localeCompare(a.zeitstempel));
+  
+  if (eintraege.length === 0) {
+    return `
+      <div class="vorlagen-leer">
+        <p>Noch keine direkten Einträge vorhanden.</p>
+        <p class="vorlagen-leer-hint">Füge deine erste Mahlzeit direkt hinzu (nicht über Vorlagen), um sie hier zu sehen.</p>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+        </div>
+      </div>`;
+  }
+  
+  return `
+    <div class="vorlagen-liste">
+      ${eintraege.map(e => {
+        const summen = summiereNaehrstoffe(e.zutaten);
+        const datumAnzeige = datumKurz(e.datum);
+        const zeitAnzeige = zeitFormatieren(e.zeitstempel);
+        return `
+          <div class="vorlage-item">
+            <div class="vorlage-item-header">
+              <div>
+                <span class="vorlage-name">${e.notiz ? escHtml(e.notiz) : 'Mahlzeit'}</span>
+                <span class="vorlage-meta">${datumAnzeige} · ${zeitAnzeige} · ${e.zutaten.length} Zutat${e.zutaten.length !== 1 ? 'en' : ''} · ${Math.round(summen.kalorien)} kcal</span>
+              </div>
+              <button class="btn-icon delete-historie-btn" data-id="${e.id}" title="Löschen">
+                ${ICONS.trash}
+              </button>
+            </div>
+            <div class="vorlage-zutaten-preview">${e.zutaten.map(z => escHtml(z.name)).join(', ')}</div>
+            <div class="vorlage-multiplikator-row">
+              <label class="form-label">Multiplikator</label>
+              <input type="number" class="form-input form-input--sm historie-multiplikator" data-id="${e.id}" value="1" min="0.1" max="10" step="0.1">
+            </div>
+            <div class="vorlage-actions">
+              <button class="btn btn-primary historie-jetzt-btn" data-id="${e.id}">
+                ${ICONS.lightning} Jetzt gegessen
+              </button>
+              <button class="btn btn-secondary historie-anpassen-btn" data-id="${e.id}">
+                ${ICONS.pencil} Anpassen
+              </button>
+            </div>
           </div>`;
       }).join('')}
       <div class="modal-footer">
@@ -1702,6 +2142,20 @@ function eintragBestaetigen() {
   const datum = document.getElementById('entry-date')?.value || heuteStr();
   const zeit  = document.getElementById('entry-time')?.value || '00:00';
   const notiz = document.getElementById('entry-note')?.value.trim() || '';
+  
+  // Wenn für Planung: zu Planung hinzufügen statt zu Einträgen
+  if (state.vorlagePending === 'planung' && state.aktivePlanungId) {
+    planungHinzufuegen(state.aktivePlanungId, {
+      notiz,
+      zutaten: state.parsedIngredients,
+    });
+    schliesseModal();
+    renderView();
+    zeigeToast('Mahlzeit zur Planung hinzugefügt', 'success');
+    return;
+  }
+  
+  // Normal zu Einträgen hinzufügen
   eintragHinzufuegen({
     id: genId(), datum,
     zeitstempel: new Date(`${datum}T${zeit}:00`).toISOString(),
@@ -1749,16 +2203,264 @@ function bindeModalVorlagenEvents() {
     });
   });
 
-  document.querySelectorAll('.verwenden-btn').forEach(btn => {
+  // "Jetzt gegessen" - Sofort hinzufügen ohne Bearbeitung
+  document.querySelectorAll('.vorlage-jetzt-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const vorlage = db.mahlzeit_vorlagen.find(v => v.id === btn.dataset.id);
       if (!vorlage) return;
+      
+      // Multiplikator aus dem Input-Feld holen
+      const multiplikatorInput = document.querySelector(`.vorlage-multiplikator[data-id="${btn.dataset.id}"]`);
+      const multiplikator = parseFloat(multiplikatorInput?.value) || 1;
+      
+      // Zutaten mit Multiplikator skalieren
+      const zutatenSkaliert = vorlage.zutaten.map(z => {
+        const skaliert = { ...z };
+        skaliert.menge = z.menge * multiplikator;
+        NUTRIENT_FIELDS.forEach(f => {
+          skaliert[f.key] = z[f.key] * multiplikator;
+        });
+        return skaliert;
+      });
+      
+      // Wenn für Planung: zur Planung hinzufügen
+      if (state.vorlagePending === 'planung' && state.aktivePlanungId) {
+        planungHinzufuegen(state.aktivePlanungId, {
+          notiz: vorlage.name,
+          zutaten: zutatenSkaliert,
+        });
+        schliesseModal();
+        renderView();
+        zeigeToast(`"${vorlage.name}" zur Planung hinzugefügt`, 'success');
+        return;
+      }
+      
+      // Sonst: Sofort für heute mit aktueller Zeit hinzufügen
+      const jetzt = new Date();
+      const heute = heuteStr();
+      const zeit = jetzt.toTimeString().slice(0, 5);
+      
+      eintragHinzufuegen({
+        id: genId(),
+        datum: heute,
+        zeitstempel: new Date(`${heute}T${zeit}:00`).toISOString(),
+        notiz: vorlage.name, // Vorlagenname als Notiz
+        zutaten: zutatenSkaliert,
+        vonVorlage: true, // Markierung dass dieser Eintrag von einer Vorlage stammt
+      });
+      
+      schliesseModal();
+      renderView();
+      zeigeToast(`"${vorlage.name}" hinzugefügt`, 'success');
+    });
+  });
+
+  // "Anpassen" - Bestehende Funktion zum Bearbeiten vor dem Hinzufügen
+  document.querySelectorAll('.vorlage-anpassen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const vorlage = db.mahlzeit_vorlagen.find(v => v.id === btn.dataset.id);
+      if (!vorlage) return;
+      
+      // Multiplikator aus dem Input-Feld holen
+      const multiplikatorInput = document.querySelector(`.vorlage-multiplikator[data-id="${btn.dataset.id}"]`);
+      const multiplikator = parseFloat(multiplikatorInput?.value) || 1;
+      
+      // Original-Zutaten speichern (unskaliert für die Proportionsberechnung)
       state.vorlagenOriginal = JSON.parse(JSON.stringify(vorlage.zutaten));
-      state.vorlagenEdit = JSON.parse(JSON.stringify(vorlage.zutaten));
+      
+      // Zutaten mit Multiplikator skalieren
+      state.vorlagenEdit = vorlage.zutaten.map(z => {
+        const skaliert = { ...z };
+        skaliert.menge = z.menge * multiplikator;
+        NUTRIENT_FIELDS.forEach(f => {
+          skaliert[f.key] = z[f.key] * multiplikator;
+        });
+        return skaliert;
+      });
+      
       renderModalBody();
     });
   });
 
+  // Zurück-Button im Edit-View
+  document.getElementById('vl-back-btn')?.addEventListener('click', () => {
+    state.vorlagenEdit = null;
+    state.vorlagenOriginal = null;
+    renderModalBody();
+  });
+
+  // Mengen-Input: proportionale Neuberechnung aller Nährwerte
+  document.querySelectorAll('.vl-menge-field').forEach(input => {
+    input.addEventListener('input', () => {
+      const idx = parseInt(input.dataset.idx);
+      const newMenge = parseFloat(input.value) || 0;
+      const orig = state.vorlagenOriginal[idx];
+      const ratio = orig.menge > 0 ? newMenge / orig.menge : 0;
+
+      state.vorlagenEdit[idx].menge = newMenge;
+      NUTRIENT_FIELDS.forEach(f => {
+        state.vorlagenEdit[idx][f.key] = orig[f.key] * ratio;
+      });
+
+      // Angezeigte Werte aktualisieren
+      document.querySelectorAll(`.vl-calc[data-idx="${idx}"]`).forEach(span => {
+        const field = span.dataset.field;
+        const val = state.vorlagenEdit[idx][field];
+        if (span.dataset.unit === 'kcal') {
+          span.textContent = `${Math.round(val)} kcal`;
+        } else {
+          span.textContent = `${runden(val)}g ${span.dataset.label}`;
+        }
+      });
+    });
+  });
+
+  // Bestätigen im Edit-View
+  document.getElementById('vl-confirm-btn')?.addEventListener('click', () => {
+    if (!state.vorlagenEdit?.length) return;
+    const datum = document.getElementById('vl-datum')?.value || heuteStr();
+    const zeit  = document.getElementById('vl-zeit')?.value || '00:00';
+    const notiz = document.getElementById('vl-notiz')?.value.trim() || '';
+    
+    // Wenn für Planung: zur Planung hinzufügen
+    if (state.vorlagePending === 'planung' && state.aktivePlanungId) {
+      planungHinzufuegen(state.aktivePlanungId, {
+        notiz,
+        zutaten: state.vorlagenEdit,
+      });
+      state.vorlagenEdit = null;
+      state.vorlagenOriginal = null;
+      schliesseModal();
+      renderView();
+      zeigeToast('Mahlzeit zur Planung hinzugefügt', 'success');
+      return;
+    }
+    
+    // Sonst: normal hinzufügen
+    eintragHinzufuegen({
+      id: genId(), datum,
+      zeitstempel: new Date(`${datum}T${zeit}:00`).toISOString(),
+      notiz, zutaten: state.vorlagenEdit,
+      vonVorlage: true, // Markierung dass dieser Eintrag von einer Vorlage stammt
+    });
+    state.vorlagenEdit = null;
+    state.vorlagenOriginal = null;
+    schliesseModal();
+    renderView();
+    zeigeToast('Mahlzeit hinzugefügt', 'success');
+  });
+}
+
+function bindeModalVorlageSpeichernEvents() {
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+  document.getElementById('vorlage-speichern-btn')?.addEventListener('click', () => {
+    const name = document.getElementById('vorlage-name-input')?.value.trim();
+    if (!name) { zeigeToast('Bitte einen Namen eingeben', 'error'); return; }
+    vorlageHinzufuegen({
+      id: genId(),
+      name,
+      erstellt: new Date().toISOString(),
+      zutaten: JSON.parse(JSON.stringify(state.vorlagePending)),
+    });
+    schliesseModal();
+    zeigeToast(`Vorlage „${name}" gespeichert`, 'success');
+  });
+}
+
+function bindeModalEintraegeHistorieEvents() {
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+  
+  // Lösch-Button für Einträge in der Historie
+  document.querySelectorAll('.delete-historie-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      zeigeBestaetigung('Eintrag aus Historie löschen?', () => {
+        const id = btn.dataset.id;
+        db.eintraege = db.eintraege.filter(e => e.id !== id);
+        speichereDaten();
+        renderModalBody();
+        zeigeToast('Eintrag gelöscht', 'success');
+      });
+    });
+  });
+  
+  // "Jetzt gegessen" - Eintrag sofort für heute wiederholen
+  document.querySelectorAll('.historie-jetzt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const eintrag = db.eintraege.find(e => e.id === btn.dataset.id);
+      if (!eintrag) return;
+      
+      // Multiplikator aus dem Input-Feld holen
+      const multiplikatorInput = document.querySelector(`.historie-multiplikator[data-id="${btn.dataset.id}"]`);
+      const multiplikator = parseFloat(multiplikatorInput?.value) || 1;
+      
+      // Zutaten mit Multiplikator skalieren
+      const zutatenSkaliert = eintrag.zutaten.map(z => {
+        const skaliert = { ...z };
+        skaliert.menge = z.menge * multiplikator;
+        NUTRIENT_FIELDS.forEach(f => {
+          skaliert[f.key] = z[f.key] * multiplikator;
+        });
+        return skaliert;
+      });
+      
+      // Wenn für Planung: zur Planung hinzufügen
+      if (state.vorlagePending === 'planung' && state.aktivePlanungId) {
+        planungHinzufuegen(state.aktivePlanungId, {
+          notiz: eintrag.notiz || '',
+          zutaten: zutatenSkaliert,
+        });
+        schliesseModal();
+        renderView();
+        zeigeToast(`Eintrag zur Planung hinzugefügt`, 'success');
+        return;
+      }
+      
+      // Sonst: Sofort für heute mit aktueller Zeit hinzufügen
+      const jetzt = new Date();
+      const heute = heuteStr();
+      const zeit = jetzt.toTimeString().slice(0, 5);
+      
+      eintragHinzufuegen({
+        id: genId(),
+        datum: heute,
+        zeitstempel: new Date(`${heute}T${zeit}:00`).toISOString(),
+        notiz: eintrag.notiz || '', 
+        zutaten: zutatenSkaliert,
+      });
+      
+      schliesseModal();
+      renderView();
+      zeigeToast(`Eintrag erneut hinzugefügt`, 'success');
+    });
+  });
+  
+  // "Anpassen" - Eintrag bearbeiten vor dem Hinzufügen
+  document.querySelectorAll('.historie-anpassen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const eintrag = db.eintraege.find(e => e.id === btn.dataset.id);
+      if (!eintrag) return;
+      
+      // Multiplikator aus dem Input-Feld holen
+      const multiplikatorInput = document.querySelector(`.historie-multiplikator[data-id="${btn.dataset.id}"]`);
+      const multiplikator = parseFloat(multiplikatorInput?.value) || 1;
+      
+      // Original-Zutaten speichern (unskaliert für die Proportionsberechnung)
+      state.vorlagenOriginal = JSON.parse(JSON.stringify(eintrag.zutaten));
+      
+      // Zutaten mit Multiplikator skalieren
+      state.vorlagenEdit = eintrag.zutaten.map(z => {
+        const skaliert = { ...z };
+        skaliert.menge = z.menge * multiplikator;
+        NUTRIENT_FIELDS.forEach(f => {
+          skaliert[f.key] = z[f.key] * multiplikator;
+        });
+        return skaliert;
+      });
+      
+      renderModalBody();
+    });
+  });
+  
   // Zurück-Button im Edit-View
   document.getElementById('vl-back-btn')?.addEventListener('click', () => {
     state.vorlagenEdit = null;
@@ -1811,22 +2513,6 @@ function bindeModalVorlagenEvents() {
   });
 }
 
-function bindeModalVorlageSpeichernEvents() {
-  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
-  document.getElementById('vorlage-speichern-btn')?.addEventListener('click', () => {
-    const name = document.getElementById('vorlage-name-input')?.value.trim();
-    if (!name) { zeigeToast('Bitte einen Namen eingeben', 'error'); return; }
-    vorlageHinzufuegen({
-      id: genId(),
-      name,
-      erstellt: new Date().toISOString(),
-      zutaten: JSON.parse(JSON.stringify(state.vorlagePending)),
-    });
-    schliesseModal();
-    zeigeToast(`Vorlage „${name}" gespeichert`, 'success');
-  });
-}
-
 // ---- Eintrag Bearbeiten Modal ----
 
 function bauEintragBearbeitenModal() {
@@ -1837,6 +2523,13 @@ function bauEintragBearbeitenModal() {
       <p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:14px">
         Nur die Gramm-Menge anpassen — alle Nährwerte werden proportional berechnet.
       </p>
+      <div class="eintrag-multiplikator-section">
+        <label class="form-label">Alle Zutaten skalieren</label>
+        <div class="eintrag-multiplikator-controls">
+          <input type="number" id="eintrag-multiplikator-input" class="form-input form-input--sm" value="1" min="0.1" max="10" step="0.1">
+          <button class="btn btn-secondary btn-sm" id="eintrag-multiplikator-btn">Anwenden</button>
+        </div>
+      </div>
       ${zutaten.map((z, i) => `
         <div class="vorlage-zutat-card" data-index="${i}">
           <div class="vorlage-zutat-header-row">
@@ -1878,6 +2571,28 @@ function bindeEintragBearbeitenEvents() {
   document.getElementById('modal-confirm')?.addEventListener('click', eintragAktualisieren);
   document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
 
+  // Multiplikator für alle Zutaten anwenden
+  document.getElementById('eintrag-multiplikator-btn')?.addEventListener('click', () => {
+    const multiplikator = parseFloat(document.getElementById('eintrag-multiplikator-input')?.value) || 1;
+    if (multiplikator <= 0) {
+      zeigeToast('Multiplikator muss größer als 0 sein', 'error');
+      return;
+    }
+    
+    // Alle Zutaten skalieren
+    state.editZutaten.forEach((zutat, idx) => {
+      const orig = state.editZutatenOriginal[idx];
+      zutat.menge = orig.menge * multiplikator;
+      NUTRIENT_FIELDS.forEach(f => {
+        zutat[f.key] = (orig[f.key] || 0) * multiplikator;
+      });
+    });
+    
+    // Modal neu rendern, um die aktualisierten Werte anzuzeigen
+    renderModalBody();
+    zeigeToast(`Alle Zutaten mit ${multiplikator}× skaliert`, 'success');
+  });
+
   document.querySelectorAll('.edit-zutat-delete-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const idx = parseInt(btn.dataset.idx);
@@ -1903,6 +2618,83 @@ function bindeEintragBearbeitenEvents() {
         const val = state.editZutaten[idx][span.dataset.field] || 0;
         if (span.dataset.unit === 'kcal') span.textContent = `${Math.round(val)} kcal`;
         else span.textContent = `${runden(val)}g ${span.dataset.label}`;
+      });
+    });
+  });
+}
+
+// ---- Planung Eintrag Bearbeiten Modal ----
+
+function bauPlanungEintragBearbeitenModal() {
+  const zutaten = state.editZutaten;
+  if (!zutaten) return '';
+  return bauEintragBearbeitenModal(); // Gleiche UI wie reguläres Eintrag-Bearbeiten
+}
+
+function planungEintragAktualisieren() {
+  if (!state.aktivePlanungId || !state.editEintragId) return;
+  planungEintragBearbeiten(state.aktivePlanungId, state.editEintragId, state.editZutaten);
+  schliesseModal();
+  renderView();
+  zeigeToast('Planungs-Eintrag aktualisiert', 'success');
+}
+
+function bindePlanungEintragBearbeitenEvents() {
+  document.getElementById('modal-confirm')?.addEventListener('click', planungEintragAktualisieren);
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+
+  // Multiplikator für alle Zutaten anwenden
+  document.getElementById('eintrag-multiplikator-btn')?.addEventListener('click', () => {
+    const multiplikator = parseFloat(document.getElementById('eintrag-multiplikator-input')?.value) || 1;
+    if (multiplikator <= 0) {
+      zeigeToast('Multiplikator muss größer als 0 sein', 'error');
+      return;
+    }
+    
+    state.editZutaten.forEach((zutat, idx) => {
+      const orig = state.editZutatenOriginal[idx];
+      zutat.menge = orig.menge * multiplikator;
+      NUTRIENT_FIELDS.forEach(f => {
+        zutat[f.key] = (orig[f.key] || 0) * multiplikator;
+      });
+    });
+    
+    renderModalBody();
+    zeigeToast(`Alle Zutaten mit ${multiplikator}× skaliert`, 'success');
+  });
+
+  document.querySelectorAll('.edit-zutat-delete-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.editZutaten.length <= 1) {
+        zeigeToast('Mindestens eine Zutat erforderlich', 'error');
+        return;
+      }
+      state.editZutaten.splice(parseInt(btn.dataset.idx), 1);
+      state.editZutatenOriginal.splice(parseInt(btn.dataset.idx), 1);
+      renderModalBody();
+    });
+  });
+
+  document.querySelectorAll('.vl-menge-field').forEach(input => {
+    input.addEventListener('input', () => {
+      const idx = parseInt(input.dataset.idx);
+      const newMenge = parseFloat(input.value) || 0;
+      const orig = state.editZutatenOriginal[idx];
+      const ratio = orig.menge > 0 ? newMenge / orig.menge : 0;
+
+      state.editZutaten[idx].menge = newMenge;
+      NUTRIENT_FIELDS.forEach(f => {
+        state.editZutaten[idx][f.key] = orig[f.key] * ratio;
+      });
+
+      document.querySelectorAll(`.vl-calc[data-idx="${idx}"]`).forEach(span => {
+        const field = span.dataset.field;
+        const val = state.editZutaten[idx][field];
+        if (span.dataset.unit === 'kcal') {
+          span.textContent = `${Math.round(val)} kcal`;
+        } else {
+          span.textContent = `${runden(val)}g ${span.dataset.label}`;
+        }
       });
     });
   });
@@ -2224,6 +3016,52 @@ function zeigeToast(nachricht, typ = 'info') {
   }, 3000);
 }
 
+function erstelleNeuePlanung() {
+  const name = prompt('Name der neuen Planung:');
+  if (!name || !name.trim()) return;
+  
+  const planung = planungErstellen(name);
+  state.aktivePlanungId = planung.id;
+  state.planungEditMode = true;
+  renderView();
+  zeigeToast('Planung erstellt', 'success');
+}
+
+function zeigePlanungAnwendenDialog(planungId) {
+  const planung = db.tagesplanungen.find(p => p.id === planungId);
+  if (!planung) return;
+  
+  if (planung.eintraege.length === 0) {
+    zeigeToast('Diese Planung enthält keine Mahlzeiten', 'error');
+    return;
+  }
+  
+  const datum = prompt('Für welches Datum soll die Planung angewendet werden? (YYYY-MM-DD)', heuteStr());
+  if (!datum) return;
+  
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datum)) {
+    zeigeToast('Ungültiges Datumsformat (YYYY-MM-DD)', 'error');
+    return;
+  }
+  
+  planungAnwenden(planungId, datum);
+  zeigeToast(`Planung "${planung.name}" angewendet für ${datumKurz(datum)}`, 'success');
+  
+  // Wenn wir in der Detail-Ansicht sind, zurück zur Listenansicht
+  if (state.planungEditMode) {
+    state.planungEditMode = false;
+    state.aktivePlanungId = null;
+  }
+  
+  // Zur Heute- oder Verlauf-Ansicht wechseln
+  if (datum === heuteStr()) {
+    navigiere('heute');
+  } else {
+    state.verlaufDate = datum;
+    navigiere('verlauf');
+  }
+}
+
 // ===== EVENT BINDING =====
 
 function bindeViewEvents() {
@@ -2446,10 +3284,131 @@ function bindeViewEvents() {
     renderView();
   });
 
+  // Planungen: Neue Planung erstellen
+  c.querySelector('#neue-planung-btn')?.addEventListener('click', erstelleNeuePlanung);
+  c.querySelector('#erste-planung-btn')?.addEventListener('click', erstelleNeuePlanung);
+  
+  // Planungen: Planung öffnen
+  c.querySelectorAll('.planung-oeffnen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.aktivePlanungId = btn.dataset.id;
+      state.planungEditMode = true;
+      renderView();
+    });
+  });
+  
+  // Planungen: Planung bearbeiten (aus Listenansicht)
+  c.querySelectorAll('.planung-bearbeiten-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      state.aktivePlanungId = btn.dataset.id;
+      state.planungEditMode = true;
+      renderView();
+    });
+  });
+  
+  // Planungen: Planung löschen
+  c.querySelectorAll('.planung-loeschen-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const planung = db.tagesplanungen.find(p => p.id === btn.dataset.id);
+      if (!planung) return;
+      zeigeBestaetigung(`Planung "${planung.name}" wirklich löschen?`, () => {
+        planungLoeschen(btn.dataset.id);
+        renderView();
+        zeigeToast('Planung gelöscht', 'success');
+      });
+    });
+  });
+  
+  // Planungen: Planung anwenden (aus Listenansicht)
+  c.querySelectorAll('.planung-anwenden-btn').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const planung = db.tagesplanungen.find(p => p.id === btn.dataset.id);
+      if (!planung) return;
+      zeigePlanungAnwendenDialog(btn.dataset.id);
+    });
+  });
+  
+  // Planungen Detail: Zurück-Button
+  c.querySelector('#planung-zurueck-btn')?.addEventListener('click', () => {
+    state.planungEditMode = false;
+    state.aktivePlanungId = null;
+    renderView();
+  });
+  
+  // Planungen Detail: Titel bearbeiten
+  const titelDisplay = c.querySelector('#planung-titel-display');
+  const titelInput = c.querySelector('#planung-titel-input');
+  titelDisplay?.addEventListener('click', () => {
+    titelDisplay.style.display = 'none';
+    titelInput.style.display = 'block';
+    titelInput.focus();
+    titelInput.select();
+  });
+  titelInput?.addEventListener('blur', () => {
+    if (titelInput.value.trim()) {
+      planungUmbenennen(state.aktivePlanungId, titelInput.value);
+      renderView();
+    } else {
+      titelDisplay.style.display = 'block';
+      titelInput.style.display = 'none';
+    }
+  });
+  titelInput?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') titelInput.blur();
+    if (e.key === 'Escape') {
+      titelInput.value = titelDisplay.textContent;
+      titelDisplay.style.display = 'block';
+      titelInput.style.display = 'none';
+    }
+  });
+  
+  // Planungen Detail: Mahlzeit hinzufügen
+  c.querySelector('#planung-mahlzeit-hinzufuegen-btn')?.addEventListener('click', () => {
+    oeffneModal('mahlzeit', null, true); // true = für Planung
+  });
+  c.querySelector('#planung-erste-mahlzeit-btn')?.addEventListener('click', () => {
+    oeffneModal('mahlzeit', null, true);
+  });
+  
+  // Planungen Detail: Eintrag bearbeiten
+  c.querySelectorAll('.planung-eintrag-bearbeiten-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const planung = db.tagesplanungen.find(p => p.id === state.aktivePlanungId);
+      if (!planung) return;
+      const eintrag = planung.eintraege.find(e => e.id === btn.dataset.eintragId);
+      if (!eintrag) return;
+      
+      state.editEintragId = btn.dataset.eintragId;
+      state.editZutaten = JSON.parse(JSON.stringify(eintrag.zutaten));
+      state.editZutatenOriginal = JSON.parse(JSON.stringify(eintrag.zutaten));
+      
+      oeffneModal('planung-eintrag-bearbeiten');
+    });
+  });
+  
+  // Planungen Detail: Eintrag löschen
+  c.querySelectorAll('.planung-eintrag-loeschen-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      zeigeBestaetigung('Eintrag aus Planung löschen?', () => {
+        planungEintragLoeschen(state.aktivePlanungId, btn.dataset.eintragId);
+        renderView();
+        zeigeToast('Eintrag gelöscht', 'success');
+      });
+    });
+  });
+  
+  // Planungen Detail: Planung anwenden
+  c.querySelector('#planung-anwenden-detail-btn')?.addEventListener('click', () => {
+    zeigePlanungAnwendenDialog(state.aktivePlanungId);
+  });
+
   // Alle Daten löschen
   c.querySelector('#clear-btn')?.addEventListener('click', () => {
     zeigeBestaetigung('Wirklich ALLE Daten löschen? Dies kann nicht rückgängig gemacht werden.', () => {
-      db = { version: 3, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [], mahlzeit_vorlagen: [], fasting_timer: null };
+      db = { version: 3, profil: null, gewicht_eintraege: [], aktivitaet_eintraege: [], tages_aktivitaetslevel: {}, eintraege: [], mahlzeit_vorlagen: [], tagesplanungen: [], fasting_timer: null };
       stoppeFastingInterval();
       speichereDaten();
       renderView();
