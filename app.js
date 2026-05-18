@@ -2229,7 +2229,6 @@ function bindeModalVorlagenEvents() {
           notiz: vorlage.name,
           zutaten: zutatenSkaliert,
         });
-        schliesseModal();
         renderView();
         zeigeToast(`"${vorlage.name}" zur Planung hinzugefügt`, 'success');
         return;
@@ -2249,7 +2248,6 @@ function bindeModalVorlagenEvents() {
         vonVorlage: true, // Markierung dass dieser Eintrag von einer Vorlage stammt
       });
       
-      schliesseModal();
       renderView();
       zeigeToast(`"${vorlage.name}" hinzugefügt`, 'success');
     });
@@ -2409,7 +2407,6 @@ function bindeModalEintraegeHistorieEvents() {
           notiz: eintrag.notiz || '',
           zutaten: zutatenSkaliert,
         });
-        schliesseModal();
         renderView();
         zeigeToast(`Eintrag zur Planung hinzugefügt`, 'success');
         return;
@@ -2428,7 +2425,6 @@ function bindeModalEintraegeHistorieEvents() {
         zutaten: zutatenSkaliert,
       });
       
-      schliesseModal();
       renderView();
       zeigeToast(`Eintrag erneut hinzugefügt`, 'success');
     });
