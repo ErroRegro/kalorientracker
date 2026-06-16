@@ -25,6 +25,8 @@ module.exports = [
         URL: 'readonly',
         Blob: 'readonly',
         FileReader: 'readonly',
+        FormData: 'readonly',
+        MediaRecorder: 'readonly',
         requestAnimationFrame: 'readonly',
         prompt: 'readonly',
         Chart: 'readonly', // Chart.js loaded via CDN

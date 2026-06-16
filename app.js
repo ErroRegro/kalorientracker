@@ -147,6 +147,7 @@ let db = {
   mahlzeit_vorlagen: [],
   tagesplanungen: [], // Array von { id, name, eintraege: [...] }
   fasting_timer: null, // { ziel_stunden, start_zeit (ISO) } | null
+  groq_api_key: '',
 };
 
 function ladeDaten() {
@@ -164,6 +165,7 @@ function ladeDaten() {
         if (!db.mahlzeit_vorlagen) db.mahlzeit_vorlagen = [];
         if (!db.tagesplanungen) db.tagesplanungen = [];
         if (db.fasting_timer === undefined) db.fasting_timer = null;
+        if (!db.groq_api_key) db.groq_api_key = '';
         db.version = 3;
       }
     }
@@ -772,9 +774,12 @@ function bauHeuteView() {
         <h1 class="view-title">Heute</h1>
         <p class="view-subtitle">${datumFormatieren(heute)}</p>
       </div>
-      <button class="btn btn-primary btn-add" id="add-meal-btn" data-date="${heute}">
-        ${ICONS.plus} Mahlzeit hinzufügen
-      </button>
+      <div class="header-actions">
+        ${db.groq_api_key ? `<button class="btn btn-secondary btn-mic" id="mic-btn" data-date="${heute}" title="Spracheingabe">🎤</button>` : ''}
+        <button class="btn btn-primary btn-add" id="add-meal-btn" data-date="${heute}">
+          ${ICONS.plus} Mahlzeit hinzufügen
+        </button>
+      </div>
     </div>
     ${bauSummaryCards(summen, eintraege.length > 0)}
     ${bauBilanzSection(heute)}
@@ -843,9 +848,12 @@ function bauTagesDetailView(datum) {
         <button class="back-btn" id="back-btn">${ICONS.chevronL} Verlauf</button>
         <h1 class="view-title">${datumFormatieren(datum)}</h1>
       </div>
-      <button class="btn btn-primary btn-add" id="add-meal-btn" data-date="${datum}">
-        ${ICONS.plus} Mahlzeit hinzufügen
-      </button>
+      <div class="header-actions">
+        ${db.groq_api_key ? `<button class="btn btn-secondary btn-mic" id="mic-btn" data-date="${datum}" title="Spracheingabe">🎤</button>` : ''}
+        <button class="btn btn-primary btn-add" id="add-meal-btn" data-date="${datum}">
+          ${ICONS.plus} Mahlzeit hinzufügen
+        </button>
+      </div>
     </div>
     ${bauSummaryCards(summen, eintraege.length > 0)}
     ${bauBilanzSection(datum)}
@@ -1326,6 +1334,21 @@ function bauProfilView() {
       </div>
 
       <div class="profil-card">
+        <h2 class="profil-card-title">KI-Integration (Groq)</h2>
+        <p class="profil-hint">Trage deinen kostenlosen Groq API-Key ein, um die Spracheingabe zu nutzen.<br>
+          Key erstellen: <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a>
+        </p>
+        <div class="profil-form">
+          <div class="form-group">
+            <label class="form-label">Groq API-Key</label>
+            <input type="password" id="p-groq-key" class="form-input" placeholder="gsk_..."
+              value="${escHtml(db.groq_api_key || '')}" autocomplete="off">
+          </div>
+          <button class="btn btn-primary" id="save-groq-key-btn">Speichern</button>
+        </div>
+      </div>
+
+      <div class="profil-card">
         <h2 class="profil-card-title">Gewicht</h2>
         ${aktuellesGewicht ? `
           <div class="gewicht-current">
@@ -1765,6 +1788,7 @@ function oeffneModal(tipo, datum, fuerPlanung = false) {
     'vorlage-speichern':          'Als Vorlage speichern',
     'eintrag-bearbeiten':         'Eintrag bearbeiten',
     'planung-eintrag-bearbeiten': 'Planungs-Eintrag bearbeiten',
+    sprache:                      'Spracheingabe',
   };
   document.getElementById('modal-title').textContent = titles[tipo] || 'Hinzufügen';
 
@@ -1772,6 +1796,7 @@ function oeffneModal(tipo, datum, fuerPlanung = false) {
   if (tipo === 'aktivitaet') state.modalTab = 'manuell';
   else if (tipo === 'vorlage-speichern') state.modalTab = 'speichern';
   else if (tipo === 'planung-eintrag-bearbeiten') state.modalTab = 'edit';
+  else if (tipo === 'sprache') state.modalTab = 'aufnahme';
   else state.modalTab = 'json';
 
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -1809,6 +1834,7 @@ function renderModalBody() {
     'vorlage-speichern':          [],
     'eintrag-bearbeiten':         [],
     'planung-eintrag-bearbeiten': [],
+    sprache:                      [],
   };
   const tabs = tabsKonfig[state.modalTipo] ?? tabsKonfig.mahlzeit;
   const tabsEl = document.getElementById('modal-tabs');
@@ -1855,6 +1881,9 @@ function renderModalBody() {
   } else if (state.modalTipo === 'planung-eintrag-bearbeiten') {
     body.innerHTML = bauPlanungEintragBearbeitenModal();
     bindePlanungEintragBearbeitenEvents();
+  } else if (state.modalTipo === 'sprache') {
+    body.innerHTML = bauSpracheModal();
+    bindeSpracheModalEvents();
   }
 }
 
@@ -1902,6 +1931,381 @@ function bauMahlzeitPromptTab() {
         <pre class="prompt-text">${escHtml(AI_PROMPT_MAHLZEIT)}</pre>
       </div>
     </div>`;
+}
+
+// ---- Sprach-Modal ----
+
+const GROQ_SYSTEM_PROMPT = `Du bist ein präziser Ernährungsassistent. Analysiere Mahlzeiten und erstelle JSON.
+Gib AUSSCHLIESSLICH ein valides JSON-Array zurück. Kein Text davor oder danach. Kein Markdown.
+
+JSON-Format:
+[
+  {
+    "name": "Zutatname",
+    "menge": 100,
+    "kalorien": 0,
+    "protein": 0,
+    "fett": 0,
+    "fett_gesaettigt": 0,
+    "fett_einfach_ungesaettigt": 0,
+    "fett_mehrfach_ungesaettigt": 0,
+    "fett_trans": 0,
+    "kohlenhydrate": 0,
+    "zucker": 0,
+    "ballaststoffe": 0,
+    "salz": 0
+  }
+]
+
+Regeln:
+- "menge" immer in Gramm (Flüssigkeiten: ml ≈ g)
+- Alle Nährwerte für die ANGEGEBENE Menge (NICHT pro 100g)
+- Nutze USDA FoodData Central oder BLS (Bundeslebensmittelschlüssel) als Referenz
+- Alle Werte als Dezimalzahl (z.B. 1.5, nicht "1,5")
+- NUR das JSON-Array ausgeben, nichts anderes`;
+
+function schlageMahlzeitNamenVor(transkript) {
+  const t = transkript.toLowerCase();
+  const keywords = [
+    { pattern: /frühstück|morgens|morgendlich/, name: 'Frühstück' },
+    { pattern: /mittagessen|mittags|mittagspause|lunch/, name: 'Mittagessen' },
+    { pattern: /abendessen|abends|abendbrot|dinner/, name: 'Abendessen' },
+    { pattern: /snack|zwischenmahlzeit|jause|pause/, name: 'Snack' },
+    { pattern: /pre[-\s]?workout|vor dem training|vorher/, name: 'Pre-Workout' },
+    { pattern: /post[-\s]?workout|nach dem training|nachher/, name: 'Post-Workout' },
+  ];
+  for (const { pattern, name } of keywords) {
+    if (pattern.test(t)) return name;
+  }
+  // Fallback: Uhrzeit auswerten
+  const stunde = new Date().getHours();
+  if (stunde >= 5  && stunde < 10) return 'Frühstück';
+  if (stunde >= 10 && stunde < 14) return 'Mittagessen';
+  if (stunde >= 14 && stunde < 18) return 'Snack';
+  return 'Abendessen';
+}
+
+function bauSpracheModal() {
+  const jetzt = new Date();
+  const zeitStr = jetzt.toTimeString().slice(0, 5);
+  return `
+    <div class="sprache-modal">
+      <div class="form-group">
+        <label class="form-label">Datum & Uhrzeit</label>
+        <div class="datetime-row">
+          <input type="date" id="entry-date" class="form-input" value="${state.modalDate}">
+          <input type="time" id="entry-time" class="form-input" value="${zeitStr}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Notiz (optional)</label>
+        <input type="text" id="entry-note" class="form-input" placeholder="z.B. Frühstück, Mittagessen …">
+      </div>
+
+      <div id="sprache-phase-aufnahme">
+        <p class="sprache-hint">Sprich, was du gegessen hast – z.B. <em>„200g Hähnchenbrust und 150g Reis"</em></p>
+        <button class="btn btn-primary btn-full sprache-record-btn" id="sprache-record-btn">
+          🎤 Aufnahme starten
+        </button>
+        <p class="sprache-status" id="sprache-status"></p>
+      </div>
+
+      <div id="sprache-phase-verarbeitung" class="hidden">
+        <div class="sprache-loading">
+          <div class="sprache-spinner"></div>
+          <p id="sprache-loading-text">Spracherkennung läuft…</p>
+        </div>
+      </div>
+
+      <div id="sprache-phase-vorschau" class="hidden">
+        <div class="form-group">
+          <label class="form-label">Erkannter Text</label>
+          <textarea id="sprache-transkript" class="form-textarea" rows="2"></textarea>
+        </div>
+        <button class="btn btn-secondary btn-full btn-sm" id="sprache-neu-analysieren-btn">↺ Erneut analysieren</button>
+        <div id="json-preview" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-ghost" id="modal-cancel">Abbrechen</button>
+        <button class="btn btn-primary" id="modal-confirm" disabled>Hinzufügen</button>
+      </div>
+    </div>`;
+}
+
+function bindeSpracheModalEvents() {
+  document.getElementById('modal-cancel')?.addEventListener('click', schliesseModal);
+  document.getElementById('modal-confirm')?.addEventListener('click', eintragBestaetigen);
+
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let isRecording = false;
+
+  const recordBtn = document.getElementById('sprache-record-btn');
+  const statusEl  = document.getElementById('sprache-status');
+
+  function zeigePhase(phase) {
+    document.getElementById('sprache-phase-aufnahme').classList.toggle('hidden', phase !== 'aufnahme');
+    document.getElementById('sprache-phase-verarbeitung').classList.toggle('hidden', phase !== 'verarbeitung');
+    document.getElementById('sprache-phase-vorschau').classList.toggle('hidden', phase !== 'vorschau');
+  }
+
+  async function transkribiere(blob) {
+    document.getElementById('sprache-loading-text').textContent = 'Spracherkennung läuft…';
+    const formData = new FormData();
+    formData.append('file', blob, 'audio.webm');
+    formData.append('model', 'whisper-large-v3');
+    formData.append('language', 'de');
+
+    const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + db.groq_api_key },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'Whisper-Fehler');
+    return data.text;
+  }
+
+  async function analysiereText(text) {
+    document.getElementById('sprache-loading-text').textContent = 'Nährwerte werden berechnet…';
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + db.groq_api_key,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0,
+        messages: [
+          { role: 'system', content: GROQ_SYSTEM_PROMPT },
+          { role: 'user', content: text },
+        ],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error?.message || 'LLaMA-Fehler');
+    const raw = data.choices[0].message.content.trim();
+    try {
+      return JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\[[\s\S]*\]/);
+      if (!match) throw new Error('Kein valides JSON in der Antwort');
+      return JSON.parse(match[0]);
+    }
+  }
+
+  async function pruefeVorlagenMatch(text) {
+    if (!db.mahlzeit_vorlagen.length) return null;
+    const vorlagenListe = db.mahlzeit_vorlagen.map((v, i) =>
+      `${i + 1}. "${v.name}" – Zutaten: ${v.zutaten.map(z => z.name).join(', ')}`
+    ).join('\n');
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + db.groq_api_key, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0,
+        messages: [{
+          role: 'user',
+          content: `Prüfe ob der folgende Text exakt zu einer der Vorlagen passt. "Exakt" bedeutet: dieselben Zutaten, egal ob in anderer Reihenfolge oder leicht anders formuliert. Antworte NUR mit der Zahl der passenden Vorlage, oder "0" wenn keine exakt passt.\n\nText: "${text}"\n\nVorlagen:\n${vorlagenListe}`,
+        }],
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) return null;
+    const nr = parseInt(data.choices[0].message.content.trim());
+    if (!nr || nr < 1 || nr > db.mahlzeit_vorlagen.length) return null;
+    return db.mahlzeit_vorlagen[nr - 1];
+  }
+
+  async function verarbeiteAudio(blob) {
+    zeigePhase('verarbeitung');
+    try {
+      const text = await transkribiere(blob);
+      // Mahlzeitnamen schon mal vorbelegen
+      const noteEl = document.getElementById('entry-note');
+      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text);
+
+      // Vorlagen-Matching (nur wenn Vorlagen vorhanden)
+      if (db.mahlzeit_vorlagen.length > 0) {
+        document.getElementById('sprache-loading-text').textContent = 'Prüfe gespeicherte Vorlagen…';
+        const matchVorlage = await pruefeVorlagenMatch(text);
+        if (matchVorlage) {
+          zeigeVorlageErkannt(matchVorlage, text);
+          return;
+        }
+      }
+      await zeigeVorschau(text);
+    } catch (e) {
+      zeigePhase('aufnahme');
+      statusEl.textContent = '❌ ' + e.message;
+    }
+  }
+
+  function zeigeVorlageErkannt(vorlage, originalText) {
+    const summen = summiereNaehrstoffe(vorlage.zutaten);
+    document.getElementById('sprache-phase-verarbeitung').classList.add('hidden');
+    document.getElementById('sprache-phase-aufnahme').classList.add('hidden');
+    document.getElementById('sprache-phase-vorschau').classList.remove('hidden');
+    document.getElementById('sprache-transkript').value = originalText;
+
+    const previewEl = document.getElementById('json-preview');
+    const confirmBtn = document.getElementById('modal-confirm');
+
+    previewEl.innerHTML = `
+      <div class="vorlage-match-banner">
+        <span class="vorlage-match-icon">✅</span>
+        <div>
+          <strong>Vorlage erkannt: „${escHtml(vorlage.name)}"</strong>
+          <p class="vorlage-match-sub">${vorlage.zutaten.length} Zutaten · ${Math.round(summen.kalorien)} kcal</p>
+        </div>
+      </div>
+      <div class="preview-section">
+        <table class="preview-table">
+          <thead><tr><th>Zutat</th><th>Menge</th><th>kcal</th><th>P</th><th>F</th><th>KH</th></tr></thead>
+          <tbody>
+            ${vorlage.zutaten.map(z => `
+              <tr>
+                <td>${escHtml(z.name)}</td><td>${z.menge}g</td>
+                <td>${Math.round(z.kalorien)}</td>
+                <td>${runden(z.protein)}g</td><td>${runden(z.fett)}g</td><td>${runden(z.kohlenhydrate)}g</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td><strong>Gesamt</strong></td><td>—</td>
+              <td><strong>${Math.round(summen.kalorien)}</strong></td>
+              <td><strong>${runden(summen.protein)}g</strong></td>
+              <td><strong>${runden(summen.fett)}g</strong></td>
+              <td><strong>${runden(summen.kohlenhydrate)}g</strong></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button class="btn btn-secondary btn-full btn-sm" id="sprache-neu-analysieren-btn" style="margin-top:8px;">
+        🔄 Stattdessen neu berechnen
+      </button>`;
+
+    state.parsedIngredients = vorlage.zutaten.map(z => Object.assign({}, z));
+    confirmBtn.disabled = false;
+
+    document.getElementById('sprache-neu-analysieren-btn')?.addEventListener('click', async () => {
+      const text2 = document.getElementById('sprache-transkript').value.trim();
+      if (!text2) return;
+      state.parsedIngredients = null;
+      confirmBtn.disabled = true;
+      zeigePhase('verarbeitung');
+      try {
+        await zeigeVorschau(text2);
+      } catch (e) {
+        zeigePhase('vorschau');
+        previewEl.innerHTML = `<div class="parse-error">❌ ${escHtml(e.message)}</div>`;
+      }
+    });
+  }
+
+  async function zeigeVorschau(text) {
+    document.getElementById('sprache-loading-text').textContent = 'Nährwerte werden berechnet…';
+    try {
+      const parsed = await analysiereText(text);
+      zeigePhase('vorschau');
+      document.getElementById('sprache-transkript').value = text;
+
+      // Mahlzeitnamen vorschlagen (nur wenn noch nicht gesetzt)
+      const noteEl = document.getElementById('entry-note');
+      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text);
+      // JSON-Preview über bestehende Funktion rendern
+      state.parsedIngredients = null;
+      document.getElementById('modal-confirm').disabled = true;
+      const previewEl = document.getElementById('json-preview');
+      const confirmBtn = document.getElementById('modal-confirm');
+      // Inline-Validierung (analog zu analysiereJSON)
+      const validiert = [];
+      for (const item of parsed) {
+        if (!item.name) continue;
+        const n = { name: String(item.name), menge: Number(item.menge) || 0 };
+        NUTRIENT_FIELDS.forEach(f => { n[f.key] = Number(item[f.key]) || 0; });
+        validiert.push(n);
+      }
+      if (validiert.length === 0) {
+        previewEl.innerHTML = `<div class="parse-error">Keine gültigen Einträge gefunden.</div>`;
+        return;
+      }
+      state.parsedIngredients = validiert;
+      const summen = summiereNaehrstoffe(validiert);
+      previewEl.innerHTML = `
+        <div class="preview-section">
+          <p class="preview-title">${validiert.length} Zutat${validiert.length !== 1 ? 'en' : ''} erkannt</p>
+          <table class="preview-table">
+            <thead><tr><th>Zutat</th><th>Menge</th><th>kcal</th><th>P</th><th>F</th><th>KH</th></tr></thead>
+            <tbody>
+              ${validiert.map(z => `
+                <tr>
+                  <td>${escHtml(z.name)}</td><td>${z.menge}g</td>
+                  <td>${Math.round(z.kalorien)}</td>
+                  <td>${runden(z.protein)}g</td><td>${runden(z.fett)}g</td><td>${runden(z.kohlenhydrate)}g</td>
+                </tr>`).join('')}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td><strong>Gesamt</strong></td><td>—</td>
+                <td><strong>${Math.round(summen.kalorien)}</strong></td>
+                <td><strong>${runden(summen.protein)}g</strong></td>
+                <td><strong>${runden(summen.fett)}g</strong></td>
+                <td><strong>${runden(summen.kohlenhydrate)}g</strong></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>`;
+      confirmBtn.disabled = false;
+
+      document.getElementById('sprache-neu-analysieren-btn')?.addEventListener('click', async () => {
+        const neuerText = document.getElementById('sprache-transkript').value.trim();
+        if (!neuerText) return;
+        zeigePhase('verarbeitung');
+        try {
+          await zeigeVorschau(neuerText);
+        } catch (e) {
+          zeigePhase('vorschau');
+          previewEl.innerHTML = `<div class="parse-error">❌ ${escHtml(e.message)}</div>`;
+        }
+      });
+    } catch (e) {
+      zeigePhase('aufnahme');
+      statusEl.textContent = '❌ ' + e.message;
+    }
+  }
+
+  recordBtn?.addEventListener('click', async () => {
+    if (!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioChunks = [];
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          verarbeiteAudio(blob);
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        recordBtn.textContent = '⏹ Aufnahme stoppen';
+        recordBtn.classList.add('sprache-record-btn--active');
+        statusEl.textContent = '🔴 Aufnahme läuft…';
+      } catch (e) {
+        statusEl.textContent = '❌ Mikrofon-Zugriff verweigert: ' + e.message;
+      }
+    } else {
+      mediaRecorder.stop();
+      isRecording = false;
+      recordBtn.textContent = '🎤 Aufnahme starten';
+      recordBtn.classList.remove('sprache-record-btn--active');
+      statusEl.textContent = '';
+    }
+  });
 }
 
 function bauMahlzeitVorlagenTab() {
@@ -3070,6 +3474,11 @@ function bindeViewEvents() {
     oeffneModal('mahlzeit', e.currentTarget.dataset.date);
   });
 
+  // Spracheingabe
+  c.querySelector('#mic-btn')?.addEventListener('click', e => {
+    oeffneModal('sprache', e.currentTarget.dataset.date);
+  });
+
   // Detail-Toggle
   c.querySelectorAll('.btn-details-toggle').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -3183,6 +3592,15 @@ function bindeViewEvents() {
     speichereDaten();
     renderView();
     zeigeToast('Profil gespeichert', 'success');
+  });
+
+  // Groq API-Key speichern
+  c.querySelector('#save-groq-key-btn')?.addEventListener('click', () => {
+    const key = document.getElementById('p-groq-key')?.value.trim();
+    if (key && !key.startsWith('gsk_')) { zeigeToast('Groq API-Key muss mit gsk_ beginnen', 'error'); return; }
+    db.groq_api_key = key;
+    speichereDaten();
+    zeigeToast(key ? 'API-Key gespeichert ✓' : 'API-Key entfernt', 'success');
   });
 
   // Gewicht-Form Toggle
