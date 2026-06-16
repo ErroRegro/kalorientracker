@@ -2123,7 +2123,19 @@ function bindeSpracheModalEvents() {
         temperature: 0,
         messages: [{
           role: 'user',
-          content: `Prüfe ob der folgende Text exakt zu einer der Vorlagen passt. "Exakt" bedeutet: dieselben Zutaten, egal ob in anderer Reihenfolge oder leicht anders formuliert. Antworte NUR mit der Zahl der passenden Vorlage, oder "0" wenn keine exakt passt.\n\nText: "${text}"\n\nVorlagen:\n${vorlagenListe}`,
+          content: `Prüfe ob der folgende Text zu einer der Vorlagen passt. Antworte NUR mit der Zahl der passenden Vorlage, oder "0" wenn keine passt.
+
+Regeln für einen Match:
+- Dieselben Lebensmittel müssen vorhanden sein (Reihenfolge egal)
+- Wenn die Vorlage eine Marke enthält (z.B. "Harry Eiweißbrot") und im Text keine Marke genannt wird (z.B. nur "Eiweißbrot") → gilt als Match
+- Wenn im Text eine ANDERE Marke explizit genannt wird (z.B. "Mestemacher Eiweißbrot" statt "Harry Eiweißbrot") → kein Match
+- Wenn im Text zusätzliche Zutaten vorkommen die nicht in der Vorlage sind → kein Match
+- Wenn im Text Zutaten fehlen die in der Vorlage sind → kein Match
+
+Text: "${text}"
+
+Vorlagen:
+${vorlagenListe}`,
         }],
       }),
     });
