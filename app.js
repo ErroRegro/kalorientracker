@@ -1746,7 +1746,9 @@ function oeffneModal(tipo, datum, fuerPlanung = false) {
   state.parsedWeights = null;
   state.vorlagenEdit = null;
   state.vorlagenOriginal = null;
-  state.vorlagePending = fuerPlanung ? 'planung' : null; // Marker ob für Planung
+  if (tipo !== 'vorlage-speichern') {
+    state.vorlagePending = fuerPlanung ? 'planung' : null; // Marker ob für Planung
+  }
   // editEintragId/editZutaten werden vom Aufrufer gesetzt, nicht hier zurückgesetzt
   if (tipo !== 'eintrag-bearbeiten' && tipo !== 'planung-eintrag-bearbeiten') {
     state.editEintragId = null;

@@ -16,7 +16,13 @@ Statische Single-Page-App für Kalorienverfolgung ohne Bundler oder Framework.
 python -m http.server 3000
 ```
 
-**Wichtig:** Es gibt keine Build-, Lint- oder Test-Commands. Die App ist rein statisch.
+**Linting:**
+```bash
+npm run lint        # ESLint prüfen (Exit 0 = OK)
+npm run lint:fix    # Automatisch behebbare Fehler fixen
+```
+
+**Wichtig:** Es gibt keine Build- oder Test-Commands. Die App ist rein statisch.
 
 ## Code-Konventionen
 
