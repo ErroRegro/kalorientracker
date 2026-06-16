@@ -1725,8 +1725,8 @@ function bauEintragCard(eintrag) {
         </div>
       </div>
       <div class="ingredient-list">
-        ${eintrag.zutaten.map(z => `
-          <div class="ingredient-row">
+        ${eintrag.zutaten.map((z, idx) => `
+          <div class="ingredient-row" data-eintrag-id="${eintrag.id}" data-zutat-idx="${idx}">
             <span class="ingredient-name">${escHtml(z.name)}</span>
             <span class="ingredient-amount">${z.menge}g</span>
             <span class="ingredient-kcal">${Math.round(z.kalorien || 0)} kcal</span>
@@ -3475,6 +3475,118 @@ function zeigePlanungAnwendenDialog(planungId) {
 
 // ===== EVENT BINDING =====
 
+// ---- Quick-Edit Slider (Long-Press auf Zutat) ----
+
+let quickEditPopup = null;
+
+function entferneQuickEditPopup() {
+  if (quickEditPopup) {
+    quickEditPopup.remove();
+    quickEditPopup = null;
+  }
+}
+
+function zeigeQuickEditSlider(row) {
+  entferneQuickEditPopup();
+
+  const eintragId = row.dataset.eintragId;
+  const zutatIdx  = parseInt(row.dataset.zutatIdx);
+  const eintrag   = db.eintraege.find(e => e.id === eintragId);
+  if (!eintrag) return;
+
+  const zutat = eintrag.zutaten[zutatIdx];
+  const originalMenge = zutat.menge;
+  const maxMenge = Math.max(500, Math.round(originalMenge * 3));
+
+  const popup = document.createElement('div');
+  popup.className = 'quick-edit-popup';
+  popup.innerHTML = `
+    <div class="quick-edit-name">${escHtml(zutat.name)}</div>
+    <div class="quick-edit-menge-row">
+      <span class="quick-edit-menge-label">Menge:</span>
+      <strong class="quick-edit-menge-val" id="qe-val">${Math.round(zutat.menge)}g</strong>
+    </div>
+    <input type="range" class="quick-edit-slider" id="qe-slider"
+      min="1" max="${maxMenge}" step="1" value="${Math.round(zutat.menge)}">
+    <div class="quick-edit-kcal" id="qe-kcal">${Math.round(zutat.kalorien || 0)} kcal</div>
+  `;
+
+  // Popup über der Zeile positionieren
+  const rect = row.getBoundingClientRect();
+  popup.style.top  = `${rect.top + window.scrollY - 10}px`;
+  popup.style.left = `${rect.left}px`;
+  popup.style.width = `${rect.width}px`;
+  document.body.appendChild(popup);
+  quickEditPopup = popup;
+
+  const slider  = popup.querySelector('#qe-slider');
+  const valEl   = popup.querySelector('#qe-val');
+  const kcalEl  = popup.querySelector('#qe-kcal');
+
+  slider.addEventListener('input', () => {
+    const neueMenge = parseFloat(slider.value);
+    const faktor = originalMenge > 0 ? neueMenge / originalMenge : 1;
+    const neueKcal = Math.round((zutat.kalorien || 0) * faktor);
+    valEl.textContent  = `${Math.round(neueMenge)}g`;
+    kcalEl.textContent = `${neueKcal} kcal`;
+  });
+
+  let saveTimeout;
+  function speichereUndSchliesse() {
+    clearTimeout(saveTimeout);
+    const neueMenge = parseFloat(slider.value);
+    if (Math.abs(neueMenge - originalMenge) < 0.5) { entferneQuickEditPopup(); return; }
+    const faktor = originalMenge > 0 ? neueMenge / originalMenge : 1;
+    const neueZutat = { ...zutat, menge: neueMenge };
+    NUTRIENT_FIELDS.forEach(f => { neueZutat[f.key] = (zutat[f.key] || 0) * faktor; });
+    eintrag.zutaten[zutatIdx] = neueZutat;
+    speichereDaten();
+    entferneQuickEditPopup();
+    renderView();
+    zeigeToast(`${zutat.name}: ${Math.round(neueMenge)}g gespeichert`, 'success');
+  }
+
+  slider.addEventListener('change', () => {
+    saveTimeout = setTimeout(speichereUndSchliesse, 800);
+  });
+
+  // Außerhalb tippen → schließen
+  setTimeout(() => {
+    document.addEventListener('pointerdown', function handler(e) {
+      if (!popup.contains(e.target)) {
+        speichereUndSchliesse();
+        document.removeEventListener('pointerdown', handler);
+      }
+    });
+  }, 100);
+}
+
+function bindeIngredientLongPress(container) {
+  container.querySelectorAll('.ingredient-row[data-eintrag-id]').forEach(row => {
+    let longPressTimer = null;
+
+    const start = (e) => {
+      longPressTimer = setTimeout(() => {
+        longPressTimer = null;
+        // Vibration-Feedback wenn verfügbar
+        if (navigator.vibrate) navigator.vibrate(40);
+        zeigeQuickEditSlider(row);
+      }, 500);
+    };
+
+    const cancel = () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    };
+
+    row.addEventListener('touchstart', e => { e.preventDefault(); start(e); }, { passive: false });
+    row.addEventListener('touchend',   cancel);
+    row.addEventListener('touchmove',  cancel);
+    row.addEventListener('mousedown',  start);
+    row.addEventListener('mouseup',    cancel);
+    row.addEventListener('mouseleave', cancel);
+  });
+}
+
 function bindeViewEvents() {
   const c = document.getElementById('view-container');
 
@@ -3487,6 +3599,9 @@ function bindeViewEvents() {
   c.querySelector('#mic-btn')?.addEventListener('click', e => {
     oeffneModal('sprache', e.currentTarget.dataset.date);
   });
+
+  // Long-Press Quick-Edit auf Zutaten
+  bindeIngredientLongPress(c);
 
   // Detail-Toggle
   c.querySelectorAll('.btn-details-toggle').forEach(btn => {
