@@ -128,6 +128,7 @@ const state = {
   vorlagenEdit: null,
   vorlagenOriginal: null,
   vorlagePending: null,
+  vorlagePendingName: '',
   editEintragId: null,       // ID des Eintrags der gerade bearbeitet wird
   editZutaten: null,         // deep-copy der Zutaten in Bearbeitung
   editZutatenOriginal: null, // Originalwerte als Referenz für Proportionalrechnung
@@ -1813,6 +1814,7 @@ function schliesseModal() {
   state.vorlagenEdit = null;
   state.vorlagenOriginal = null;
   state.vorlagePending = null;
+  state.vorlagePendingName = '';
   state.editEintragId = null;
   state.editZutaten = null;
   state.editZutatenOriginal = null;
@@ -1964,9 +1966,9 @@ Regeln:
 - Alle Werte als Dezimalzahl (z.B. 1.5, nicht "1,5")
 - NUR das JSON-Array ausgeben, nichts anderes`;
 
-function schlageMahlzeitNamenVor(transkript) {
+function schlageMahlzeitNamenVor(transkript, zutaten) {
   const t = transkript.toLowerCase();
-  const keywords = [
+  const mahlzeitKeywords = [
     { pattern: /frühstück|morgens|morgendlich/, name: 'Frühstück' },
     { pattern: /mittagessen|mittags|mittagspause|lunch/, name: 'Mittagessen' },
     { pattern: /abendessen|abends|abendbrot|dinner/, name: 'Abendessen' },
@@ -1974,15 +1976,25 @@ function schlageMahlzeitNamenVor(transkript) {
     { pattern: /pre[-\s]?workout|vor dem training|vorher/, name: 'Pre-Workout' },
     { pattern: /post[-\s]?workout|nach dem training|nachher/, name: 'Post-Workout' },
   ];
-  for (const { pattern, name } of keywords) {
-    if (pattern.test(t)) return name;
+
+  let mahlzeit = null;
+  for (const { pattern, name } of mahlzeitKeywords) {
+    if (pattern.test(t)) { mahlzeit = name; break; }
   }
-  // Fallback: Uhrzeit auswerten
-  const stunde = new Date().getHours();
-  if (stunde >= 5  && stunde < 10) return 'Frühstück';
-  if (stunde >= 10 && stunde < 14) return 'Mittagessen';
-  if (stunde >= 14 && stunde < 18) return 'Snack';
-  return 'Abendessen';
+  if (!mahlzeit) {
+    const stunde = new Date().getHours();
+    if (stunde >= 5  && stunde < 10) mahlzeit = 'Frühstück';
+    else if (stunde >= 10 && stunde < 14) mahlzeit = 'Mittagessen';
+    else if (stunde >= 14 && stunde < 18) mahlzeit = 'Snack';
+    else mahlzeit = 'Abendessen';
+  }
+
+  // Hauptzutaten aus den erkannten Zutaten hinzufügen (max. 2)
+  if (zutaten && zutaten.length > 0) {
+    const hauptzutaten = zutaten.slice(0, 2).map(z => z.name).join(' & ');
+    return `${mahlzeit} – ${hauptzutaten}`;
+  }
+  return mahlzeit;
 }
 
 function bauSpracheModal() {
@@ -2124,9 +2136,6 @@ function bindeSpracheModalEvents() {
     zeigePhase('verarbeitung');
     try {
       const text = await transkribiere(blob);
-      // Mahlzeitnamen schon mal vorbelegen
-      const noteEl = document.getElementById('entry-note');
-      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text);
 
       // Vorlagen-Matching (nur wenn Vorlagen vorhanden)
       if (db.mahlzeit_vorlagen.length > 0) {
@@ -2213,9 +2222,9 @@ function bindeSpracheModalEvents() {
       zeigePhase('vorschau');
       document.getElementById('sprache-transkript').value = text;
 
-      // Mahlzeitnamen vorschlagen (nur wenn noch nicht gesetzt)
+      // Mahlzeitnamen vorschlagen (nur wenn noch nicht gesetzt) – jetzt mit Zutaten
       const noteEl = document.getElementById('entry-note');
-      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text);
+      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text, validiert);
       // JSON-Preview über bestehende Funktion rendern
       state.parsedIngredients = null;
       document.getElementById('modal-confirm').disabled = true;
@@ -2465,7 +2474,7 @@ function bauVorlageSpeichernTab() {
     <div class="modal-json-tab">
       <div class="form-group">
         <label class="form-label">Name der Vorlage</label>
-        <input type="text" id="vorlage-name-input" class="form-input" placeholder="z.B. Frühstück, Haferbrei Standard …" autofocus>
+        <input type="text" id="vorlage-name-input" class="form-input" placeholder="z.B. Frühstück, Haferbrei Standard …" autofocus value="${escHtml(state.vorlagePendingName || '')}">
       </div>
       <div class="preview-section" style="margin-top:12px">
         <p class="preview-title">${zutaten.length} Zutat${zutaten.length !== 1 ? 'en' : ''} · ${Math.round(summen.kalorien)} kcal</p>
@@ -3506,6 +3515,7 @@ function bindeViewEvents() {
       const eintrag = db.eintraege.find(e => e.id === btn.dataset.id);
       if (!eintrag) return;
       state.vorlagePending = JSON.parse(JSON.stringify(eintrag.zutaten));
+      state.vorlagePendingName = eintrag.notiz || '';
       oeffneModal('vorlage-speichern', null);
     });
   });
