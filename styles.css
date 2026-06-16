@@ -431,11 +431,11 @@ a { color: inherit; text-decoration: none; }
 .quick-edit-popup {
   position: absolute;
   z-index: 1000;
-  background: var(--surface-2);
+  background: var(--bg-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 12px 14px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.7);
   transform: translateY(-100%) translateY(-8px);
 }
 
@@ -451,12 +451,27 @@ a { color: inherit; text-decoration: none; }
 
 .quick-edit-menge-row {
   display: flex;
-  align-items: baseline;
-  gap: 6px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   margin-bottom: 8px;
-  font-size: 0.82rem;
-  color: var(--text-2);
 }
+
+.quick-edit-nudge {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-1);
+  font-size: 1.1rem;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.quick-edit-nudge:active { background: var(--accent); color: white; }
 
 .quick-edit-menge-val {
   font-size: 1.1rem;
@@ -475,6 +490,16 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-2);
   text-align: right;
 }
+
+.quick-edit-footer {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+.quick-edit-range { opacity: 0.6; }
 
 .ingredient-name {
   font-size: 13.5px;

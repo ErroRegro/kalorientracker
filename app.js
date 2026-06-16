@@ -3496,61 +3496,90 @@ function zeigeQuickEditSlider(row) {
 
   const zutat = eintrag.zutaten[zutatIdx];
   const originalMenge = zutat.menge;
-  const maxMenge = Math.max(500, Math.round(originalMenge * 3));
+
+  let aktuelleMenge = Math.round(originalMenge);
 
   const popup = document.createElement('div');
   popup.className = 'quick-edit-popup';
-  popup.innerHTML = `
-    <div class="quick-edit-name">${escHtml(zutat.name)}</div>
-    <div class="quick-edit-menge-row">
-      <span class="quick-edit-menge-label">Menge:</span>
-      <strong class="quick-edit-menge-val" id="qe-val">${Math.round(zutat.menge)}g</strong>
-    </div>
-    <input type="range" class="quick-edit-slider" id="qe-slider"
-      min="1" max="${maxMenge}" step="1" value="${Math.round(zutat.menge)}">
-    <div class="quick-edit-kcal" id="qe-kcal">${Math.round(zutat.kalorien || 0)} kcal</div>
-  `;
-
-  // Popup über der Zeile positionieren
-  const rect = row.getBoundingClientRect();
-  popup.style.top  = `${rect.top + window.scrollY - 10}px`;
-  popup.style.left = `${rect.left}px`;
-  popup.style.width = `${rect.width}px`;
   document.body.appendChild(popup);
   quickEditPopup = popup;
 
-  const slider  = popup.querySelector('#qe-slider');
-  const valEl   = popup.querySelector('#qe-val');
-  const kcalEl  = popup.querySelector('#qe-kcal');
+  function fensterGroesse(menge) {
+    // Fenster: ±max(20g, 40% der aktuellen Menge), min 1g
+    return Math.max(20, Math.round(menge * 0.4));
+  }
 
-  slider.addEventListener('input', () => {
-    const neueMenge = parseFloat(slider.value);
-    const faktor = originalMenge > 0 ? neueMenge / originalMenge : 1;
-    const neueKcal = Math.round((zutat.kalorien || 0) * faktor);
-    valEl.textContent  = `${Math.round(neueMenge)}g`;
-    kcalEl.textContent = `${neueKcal} kcal`;
-  });
+  function renderPopup() {
+    const fenster = fensterGroesse(aktuelleMenge);
+    const sliderMin = Math.max(1, aktuelleMenge - fenster);
+    const sliderMax = aktuelleMenge + fenster;
+    const faktor = originalMenge > 0 ? aktuelleMenge / originalMenge : 1;
+    const kcal = Math.round((zutat.kalorien || 0) * faktor);
 
-  let saveTimeout;
+    popup.innerHTML = `
+      <div class="quick-edit-name">${escHtml(zutat.name)}</div>
+      <div class="quick-edit-menge-row">
+        <button class="quick-edit-nudge" id="qe-minus" title="-1g">−</button>
+        <strong class="quick-edit-menge-val" id="qe-val">${aktuelleMenge}g</strong>
+        <button class="quick-edit-nudge" id="qe-plus" title="+1g">+</button>
+      </div>
+      <input type="range" class="quick-edit-slider" id="qe-slider"
+        min="${sliderMin}" max="${sliderMax}" step="1" value="${aktuelleMenge}">
+      <div class="quick-edit-footer">
+        <span class="quick-edit-range">${sliderMin}g – ${sliderMax}g</span>
+        <span class="quick-edit-kcal" id="qe-kcal">${kcal} kcal</span>
+      </div>`;
+
+    const slider = popup.querySelector('#qe-slider');
+    const valEl  = popup.querySelector('#qe-val');
+    const kcalEl = popup.querySelector('#qe-kcal');
+
+    slider.addEventListener('input', () => {
+      aktuelleMenge = parseInt(slider.value);
+      const f = originalMenge > 0 ? aktuelleMenge / originalMenge : 1;
+      valEl.textContent  = `${aktuelleMenge}g`;
+      kcalEl.textContent = `${Math.round((zutat.kalorien || 0) * f)} kcal`;
+    });
+
+    // Nach loslassen: Fenster neu zentrieren für mehr Präzision
+    slider.addEventListener('change', () => {
+      aktuelleMenge = parseInt(slider.value);
+      renderPopup(); // neu rendern mit neuem Fenster
+    });
+
+    popup.querySelector('#qe-minus').addEventListener('click', e => {
+      e.stopPropagation();
+      aktuelleMenge = Math.max(1, aktuelleMenge - 1);
+      renderPopup();
+    });
+    popup.querySelector('#qe-plus').addEventListener('click', e => {
+      e.stopPropagation();
+      aktuelleMenge = aktuelleMenge + 1;
+      renderPopup();
+    });
+  }
+
+  renderPopup();
+
+  // Position berechnen
+  const rect = row.getBoundingClientRect();
+  popup.style.top   = `${rect.top + window.scrollY - 10}px`;
+  popup.style.left  = `${rect.left}px`;
+  popup.style.width = `${rect.width}px`;
+
   function speichereUndSchliesse() {
-    clearTimeout(saveTimeout);
-    const neueMenge = parseFloat(slider.value);
-    if (Math.abs(neueMenge - originalMenge) < 0.5) { entferneQuickEditPopup(); return; }
-    const faktor = originalMenge > 0 ? neueMenge / originalMenge : 1;
-    const neueZutat = { ...zutat, menge: neueMenge };
+    if (Math.abs(aktuelleMenge - originalMenge) < 0.5) { entferneQuickEditPopup(); return; }
+    const faktor = originalMenge > 0 ? aktuelleMenge / originalMenge : 1;
+    const neueZutat = { ...zutat, menge: aktuelleMenge };
     NUTRIENT_FIELDS.forEach(f => { neueZutat[f.key] = (zutat[f.key] || 0) * faktor; });
     eintrag.zutaten[zutatIdx] = neueZutat;
     speichereDaten();
     entferneQuickEditPopup();
     renderView();
-    zeigeToast(`${zutat.name}: ${Math.round(neueMenge)}g gespeichert`, 'success');
+    zeigeToast(`${zutat.name}: ${aktuelleMenge}g gespeichert`, 'success');
   }
 
-  slider.addEventListener('change', () => {
-    saveTimeout = setTimeout(speichereUndSchliesse, 800);
-  });
-
-  // Außerhalb tippen → schließen
+  // Außerhalb tippen → speichern & schließen
   setTimeout(() => {
     document.addEventListener('pointerdown', function handler(e) {
       if (!popup.contains(e.target)) {
