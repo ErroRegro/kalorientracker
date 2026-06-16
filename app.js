@@ -2222,9 +2222,6 @@ function bindeSpracheModalEvents() {
       zeigePhase('vorschau');
       document.getElementById('sprache-transkript').value = text;
 
-      // Mahlzeitnamen vorschlagen (nur wenn noch nicht gesetzt) – jetzt mit Zutaten
-      const noteEl = document.getElementById('entry-note');
-      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text, validiert);
       // JSON-Preview über bestehende Funktion rendern
       state.parsedIngredients = null;
       document.getElementById('modal-confirm').disabled = true;
@@ -2242,6 +2239,10 @@ function bindeSpracheModalEvents() {
         previewEl.innerHTML = `<div class="parse-error">Keine gültigen Einträge gefunden.</div>`;
         return;
       }
+
+      // Mahlzeitnamen vorschlagen (erst hier, wenn Zutaten bekannt)
+      const noteEl = document.getElementById('entry-note');
+      if (noteEl && !noteEl.value.trim()) noteEl.value = schlageMahlzeitNamenVor(text, validiert);
       state.parsedIngredients = validiert;
       const summen = summiereNaehrstoffe(validiert);
       previewEl.innerHTML = `
