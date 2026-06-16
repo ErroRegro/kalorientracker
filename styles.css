@@ -501,6 +501,15 @@ a { color: inherit; text-decoration: none; }
 
 .quick-edit-range { opacity: 0.6; }
 
+.app-version {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-2);
+  opacity: 0.4;
+  margin-top: 24px;
+  padding-bottom: 8px;
+}
+
 .ingredient-name {
   font-size: 13.5px;
   overflow: hidden;

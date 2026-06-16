@@ -3,6 +3,7 @@
 // ===== KONFIGURATION =====
 
 const STORAGE_KEY = 'kalorientracker_v1';
+const APP_VERSION = '1.4.0';
 
 const NUTRIENT_FIELDS = [
   { key: 'kalorien',                   label: 'Kalorien',                   unit: 'kcal', group: 'main' },
@@ -1385,7 +1386,8 @@ function bauProfilView() {
           <div class="gewicht-history">${gewichtHistorie}</div>` : ''}
       </div>
 
-    </div>`;
+    </div>
+    <p class="app-version">Version ${APP_VERSION}</p>`;
 }
 
 // ===== TAGESPLANUNGEN VIEW =====
